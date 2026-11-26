@@ -1,0 +1,9 @@
+import Mathlib
+import PEqualNP.Defs
+
+set_option maxRecDepth 100000 in
+theorem PEqualNP.Outside.L_meta_20852 : PEqualNP.Represents.RepSizeAtMost (fun u v : Fin 5 => (26412065 : ℕ).testBit (5 * u.val + v.val)) 10 := by
+  refine ⟨({ gates := [{ op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [8, 9] }, { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [6, 7] }, { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [0, 1] }, { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [12, 2] }, { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [13, 4] }, { op := PEqualNP.CircuitLowerBounds.GateOp.and, inputs := [14, 5] }, { op := PEqualNP.CircuitLowerBounds.GateOp.and, inputs := [10, 4] }, { op := PEqualNP.CircuitLowerBounds.GateOp.and, inputs := [11, 3] }, { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [15, 16] }, { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [18, 17] }], output := 19 } : PEqualNP.CircuitLowerBounds.Circuit), ?_, by decide, by decide +kernel⟩
+  intro g hg
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hg
+  rcases hg with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp
