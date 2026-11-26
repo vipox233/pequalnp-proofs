@@ -1,9 +1,10 @@
 name: Sync upstream
 
 on:
-  schedule:
-    - cron: '17 * * * *'
-  workflow_dispatch:
+  push:
+    branches: [pr-queue]
+    paths:
+      - 'pr-queue/sync-request.txt'
 
 permissions:
   contents: write
@@ -14,10 +15,48 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository == 'vipox233/pequalnp-proofs' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    if: github.repository == 'vipox233/pequalnp-proofs' && github.ref == 'refs/heads/pr-queue'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - name: Sync main from upstream
+      - name: Merge upstream source while preserving fork workflows
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api --method POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_TERMINAL_PROMPT: '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q "$RUNNER_TEMP/sync.git"
+          cd "$RUNNER_TEMP/sync.git"
+          git config core.hooksPath /dev/null
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch -q --no-tags "https://github.com/$GITHUB_REPOSITORY.git" main
+          fork=$(git rev-parse FETCH_HEAD)
+          git fetch -q --no-tags https://github.com/open-goat/pequalnp-proofs.git main
+          upstream=$(git rev-parse FETCH_HEAD)
+          if git merge-base --is-ancestor "$upstream" "$fork"; then
+            echo "Already synchronized: $upstream"
+            exit 0
+          fi
+          base=$(git merge-base "$fork" "$upstream")
+          if ! git diff --quiet "$base" "$fork" -- . ':(exclude).github/workflows'; then
+            echo "::error::Local changes outside workflows require a manual merge."
+            exit 1
+          fi
+
+          # Operate on trees and the index only; never check out or run upstream code.
+          git read-tree "$upstream"
+          git ls-files -z -- .github/workflows | git update-index --force-remove -z --stdin
+          git ls-tree -r -z "$fork" -- .github/workflows | git update-index -z --index-info
+          tree=$(git write-tree)
+
+          # Keep all existing workflow bytes; all other files match the upstream tip.
+          git diff --exit-code "$fork" "$tree" -- .github/workflows
+          git diff --exit-code "$upstream" "$tree" -- . ':(exclude).github/workflows'
+          commit=$(git commit-tree "$tree" -p "$fork" -p "$upstream" -m "Sync upstream $upstream (preserve fork workflows)")
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+            push "https://github.com/$GITHUB_REPOSITORY.git" "$commit:refs/heads/main"
+          echo "Synchronized upstream $upstream; fork main $commit"
