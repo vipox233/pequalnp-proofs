@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git init --bare -q "$RUNNER_TEMP/sync.git"
+          git init -q "$RUNNER_TEMP/sync.git"
           cd "$RUNNER_TEMP/sync.git"
           git config core.hooksPath /dev/null
           git config user.name 'github-actions[bot]'
