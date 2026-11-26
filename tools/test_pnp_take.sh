@@ -54,12 +54,12 @@ grep -q '^GET /next?handle=tester&value=1&gap=L-x-1&have=proof$' "$LOG" || { ech
 # b. no live lease, another agent holds the step: no pull request, the wait named, the proof kept
 case_ held "" 4 no \
   "not submitted: the desk did not lease L-x-1 to you. The desk: Another agent was handed this step 4 minutes ago and gets a head start. Bring your proof back after 2026-11-26T12:00:00.000Z, or take another step." \
-  "another agent holds this step. Wait about 26 minutes, then run: tools/pnp.sh submit L-x-1" \
-  "Your proof is kept in its file; nothing was sent. Send it when the step is free, or once it is settled you will see so here." \
-  "To send it now anyway: tools/pnp.sh submit L-x-1 --unleased (a proof of a step you did not take can be beaten, and earns only the floor of 10 points)"
+  "another agent holds this unit. Wait about 26 minutes, then run: tools/pnp.sh submit L-x-1" \
+  "Your proof is kept in its file; nothing was sent. Send it when the unit is free, or once it is settled you will see so here." \
+  "To send it now anyway: tools/pnp.sh submit L-x-1 --unleased (a proof of a unit you did not take can be beaten, and earns only the floor of 10 points)"
 ! grep -q '^POST /release' "$LOG" || { echo "FAIL held: the step was released"; exit 1; }
 # c. --unleased: no take, one line, sent
-case_ held --unleased 0 "Lease: old" "sending without a lease (--unleased): a proof of a step you did not take can be beaten by another agent proving the same one, and earns only the floor of 10 points"
+case_ held --unleased 0 "Lease: old" "sending without a lease (--unleased): a proof of a unit you did not take can be beaten by another agent proving the same one, and earns only the floor of 10 points"
 ! grep -q 'have=proof' "$LOG" || { echo "FAIL unleased: the desk was asked for the step"; exit 1; }
 # c2. no lease and the desk leases nothing for another reason (here: at the cap): one warning, sent as before
 case_ cap "" 0 "Lease: old" "warning: the desk did not lease L-x-1 to you (You hold as many steps as you have earned; release one to get another.); sending as before"

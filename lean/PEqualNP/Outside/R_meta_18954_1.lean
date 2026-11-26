@@ -1,0 +1,16 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_18954_1
+    (hJunkOne : ∀ (x1 : SimpleGraph (Fin (26 : ℕ))) [x2 : DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit), (x1 = SimpleGraph.fromRel fun (x4 x5 : Fin (26 : ℕ)) => ↑x4 < (13 : ℕ) ∧ (13 : ℕ) ≤ ↑x5 ∧ (↑x4 + (26 : ℕ) - ↑x5) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)]) → PEqualNP.TopForm.IsLeastAO x1 x3 → PEqualNP.TopForm.TopForm x1 x3 → x3.size ≤ (64 : ℕ) → (PEqualNP.TopForm.junk x1 x3).card = (1 : ℕ) → ∃ (x9 : Finset (Fin (26 : ℕ))), (∀ (x10 x11 : Fin (26 : ℕ)), x1.Adj x10 x11 → x10 ∈ x9 ∨ x11 ∈ x9) ∧ (∃ (x10 : Fin (13 : ℕ)), Fin.castAdd (13 : ℕ) x10 ∈ x9) ∧ (∃ (x10 : Fin (13 : ℕ)), Fin.natAdd (13 : ℕ) x10 ∈ x9) ∧ x9.card + (PEqualNP.TopForm.Ustar x1 x3).card ≤ (PEqualNP.TopForm.tops x1 x3 \ PEqualNP.TopForm.centreless x1 x3).card + (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x3).card + (1 : ℕ) + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card)
+    (hJunkTwo : ∀ (x1 : SimpleGraph (Fin (26 : ℕ))) [x2 : DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit), (x1 = SimpleGraph.fromRel fun (x4 x5 : Fin (26 : ℕ)) => ↑x4 < (13 : ℕ) ∧ (13 : ℕ) ≤ ↑x5 ∧ (↑x4 + (26 : ℕ) - ↑x5) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)]) → PEqualNP.TopForm.IsLeastAO x1 x3 → PEqualNP.TopForm.TopForm x1 x3 → x3.size ≤ (64 : ℕ) → (2 : ℕ) ≤ (PEqualNP.TopForm.junk x1 x3).card → ∃ (x9 : Finset (Fin (26 : ℕ))), (∀ (x10 x11 : Fin (26 : ℕ)), x1.Adj x10 x11 → x10 ∈ x9 ∨ x11 ∈ x9) ∧ (∃ (x10 : Fin (13 : ℕ)), Fin.castAdd (13 : ℕ) x10 ∈ x9) ∧ (∃ (x10 : Fin (13 : ℕ)), Fin.natAdd (13 : ℕ) x10 ∈ x9) ∧ x9.card + (PEqualNP.TopForm.Ustar x1 x3).card ≤ (PEqualNP.TopForm.tops x1 x3 \ PEqualNP.TopForm.centreless x1 x3).card + (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x3).card + (PEqualNP.TopForm.junk x1 x3).card + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card) :
+    (∀ (x1 : SimpleGraph (Fin (26 : ℕ))) [x2 : DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit), (x1 = SimpleGraph.fromRel fun (x4 x5 : Fin (26 : ℕ)) => ↑x4 < (13 : ℕ) ∧ (13 : ℕ) ≤ ↑x5 ∧ (↑x4 + (26 : ℕ) - ↑x5) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)]) → PEqualNP.TopForm.IsLeastAO x1 x3 → PEqualNP.TopForm.TopForm x1 x3 → x3.size ≤ (64 : ℕ) → PEqualNP.TopForm.junk x1 x3 ≠ ∅ → ∃ (x9 : Finset (Fin (26 : ℕ))), (∀ (x10 x11 : Fin (26 : ℕ)), x1.Adj x10 x11 → x10 ∈ x9 ∨ x11 ∈ x9) ∧ (∃ (x10 : Fin (13 : ℕ)), Fin.castAdd (13 : ℕ) x10 ∈ x9) ∧ (∃ (x10 : Fin (13 : ℕ)), Fin.natAdd (13 : ℕ) x10 ∈ x9) ∧ x9.card + (PEqualNP.TopForm.Ustar x1 x3).card ≤ (PEqualNP.TopForm.tops x1 x3 \ PEqualNP.TopForm.centreless x1 x3).card + (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x3).card + (PEqualNP.TopForm.junk x1 x3).card + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card) := by
+  intro x1 x2 x3 hG hLeast hTF hsz hJunk
+  have hpos : 0 < (PEqualNP.TopForm.junk x1 x3).card :=
+    Finset.card_pos.mpr (Finset.nonempty_iff_ne_empty.mpr hJunk)
+  by_cases h1 : (PEqualNP.TopForm.junk x1 x3).card = (1 : ℕ)
+  · rcases @hJunkOne x1 x2 x3 hG hLeast hTF hsz h1 with ⟨x9, hcov, hL, hR, hcard⟩
+    refine ⟨x9, hcov, hL, hR, ?_⟩
+    rw [h1]
+    exact hcard
+  · have h2 : (2 : ℕ) ≤ (PEqualNP.TopForm.junk x1 x3).card := by omega
+    exact @hJunkTwo x1 x2 x3 hG hLeast hTF hsz h2

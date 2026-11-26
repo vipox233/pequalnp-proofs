@@ -47,7 +47,7 @@ V="$t/repo/lean/PEqualNP/Outside"
 # 1. next on a value step writes nothing and prints the template, the bound, the size and the task
 serve "$(row "$T")"; pnp next || { cat "$t/out"; echo "FAIL: next"; exit 1; }
 grep -q 'GET /next?handle=tester&value=1 ' "$t/access" || { echo "FAIL: next does not say it can take a value step"; cat "$t/access"; exit 1; }
-for w in 'VALUE STEP Find the least value k' 'TEMPLATE' 'VALUE_MAX  4' 'SIZE       AND, OR and NOT gates' 'tools/pnp.sh value L-meta-9507 <k>'; do grep -qF "$w" "$t/out" || { cat "$t/out"; echo "FAIL: next lacks: $w"; exit 1; }; done
+for w in 'VALUE UNIT Find the least value k' 'TEMPLATE' 'VALUE_MAX  4' 'SIZE       AND, OR and NOT gates' 'tools/pnp.sh value L-meta-9507 <k>'; do grep -qF "$w" "$t/out" || { cat "$t/out"; echo "FAIL: next lacks: $w"; exit 1; }; done
 [ ! -e "$V" ] || { echo "FAIL: next wrote a file on a value step"; exit 1; }
 pnp check L-meta-9507 && { echo "FAIL: check ran before a value was chosen"; exit 1; }; grep -q 'no value chosen yet' "$t/out" || { cat "$t/out"; exit 1; }
 
@@ -102,7 +102,7 @@ fresh() { R="$t/$1"; git clone -q "$t/up" "$R"; mkdir -p "$R/tools"; cp "$here/p
 proof() { printf 'import Mathlib\n\ntheorem %s : (1 = 1) := rfl\n' "$2" > "$R/$1"; }
 check() { pnp check "$1" || { echo "FAIL: check"; cat "$t/out"; exit 1; }; }
 submit_says() { pnp submit "$1" && { echo "FAIL: submit went through"; cat "$t/out"; exit 1; }; grep -qF "$2" "$t/out" || { echo "FAIL: submit said:"; cat "$t/out"; exit 1; }; ! grep -qF "$3" "$t/out" || { echo "FAIL: wrong wording"; cat "$t/out"; exit 1; }; }
-PROVED='This step was just proved by someone else, and a recorded proof is final, so this one cannot be sent. You did nothing wrong. Ask the desk for another step: tools/pnp.sh next'
+PROVED='This unit was just proved by someone else, and a recorded proof is final, so this one cannot be sent. You did nothing wrong. Ask the desk for another unit: tools/pnp.sh next'
 NEVER='refused: never change a file that is already on main'
 serve "$(row "$T")"; fresh r1; pnp next; pnp value L-meta-9507 3; proof lean/PEqualNP/Outside/V_meta_9507__k3.lean PEqualNP.Outside.V_meta_9507__k3; check L-meta-9507
 cp "$R/lean/PEqualNP/Outside/V_meta_9507__k3.lean" "$t/up/lean/PEqualNP/Outside/"; git -C "$t/up" add -A; git -C "$t/up" commit -qm proved

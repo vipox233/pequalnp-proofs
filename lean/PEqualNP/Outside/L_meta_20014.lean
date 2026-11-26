@@ -1,0 +1,12 @@
+import PEqualNP.Defs
+
+namespace PEqualNP.Outside.L_meta_20014
+def witness : PEqualNP.CircuitLowerBounds.Circuit := ⟨[⟨PEqualNP.CircuitLowerBounds.GateOp.or, [1, 0]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [14, 10]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [17, 11]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [4, 2]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [15, 10]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [20, 12]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [7, 5]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [15, 8]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [23, 13]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [6, 3]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [12, 11]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [6, 5]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [6, 0]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [7, 1]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [29, 3]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [30, 4]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [3, 2]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [16, 18]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [19, 21]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [22, 24]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [25, 26]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [27, 14]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [28, 8]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [31, 9]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.and, [32, 13]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [40, 33]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [41, 34]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [42, 35]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [43, 36]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [44, 37]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [45, 38]⟩, ⟨PEqualNP.CircuitLowerBounds.GateOp.or, [46, 39]⟩], 47⟩
+theorem valid : PEqualNP.MetaComplexity.Monotone2 witness := by
+  intro g hg
+  simp only [witness, List.mem_cons, List.not_mem_nil, or_false] at hg
+  rcases hg with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp
+end PEqualNP.Outside.L_meta_20014
+
+theorem PEqualNP.Outside.L_meta_20014 : PEqualNP.Represents.RepSizeAtMost (fun u v : Fin 8 => (11770687136455741005 : ℕ).testBit (8 * u.val + v.val)) 32 := by
+  exact ⟨PEqualNP.Outside.L_meta_20014.witness, PEqualNP.Outside.L_meta_20014.valid, by decide, by decide +kernel⟩

@@ -3,29 +3,31 @@
 #
 #   tools/pnp.sh setup                 check the tools and fetch the prebuilt Mathlib
 #   tools/pnp.sh next [--hard] [--another] [--level warmup|solid|hard|open] [--kind prove|refute|search|cut|value]
-#                     [--proof-of <step>]
-#                                      take a step from the desk; writes the file's skeleton. --proof-of leases a
-#                                      step you already hold a checked proof of, even while another agent holds it.
-#                                      On a VALUE step it prints the template and writes nothing yet
-#   tools/pnp.sh value <step> <k>      a value step: write the file for k (0 to value_max), the least k for which
+#                     [--proof-of <unit>] [--unit <id>]
+#                                      take a unit from the desk; writes the file's skeleton. --proof-of leases a
+#                                      unit you already hold a checked proof of, even while another agent holds it.
+#                                      On a VALUE unit it prints the template and writes nothing yet.
+#                                      --unit <id> takes that exact unit if the desk leases it to you; otherwise it
+#                                      prints the desk's reason, leases nothing, writes nothing, and exits non-zero
+#   tools/pnp.sh value <unit> <k>      a value unit: write the file for k (0 to value_max), the least k for which
 #                                      the statement holds; check and submit then work on that file
-#   tools/pnp.sh beat <step>           keep the lease alive: every 5 minutes while you work; stop at a 410
-#   tools/pnp.sh check <step>          remove the comments from your file, build it, and record the bytes that built
+#   tools/pnp.sh beat <unit>           keep the lease alive: every 5 minutes while you work; stop at a 410
+#   tools/pnp.sh check <unit>          remove the comments from your file, build it, and record the bytes that built
 #                     [--allow-sorry]  build a file that still holds sorry, to see that it elaborates; records nothing
-#   tools/pnp.sh tidy <step>           only remove the comments
-#   tools/pnp.sh submit <step> [--unleased]
+#   tools/pnp.sh tidy <unit>           only remove the comments
+#   tools/pnp.sh submit <unit> [--unleased]
 #                                      one branch, one commit, one file, the pull request, the release. With no live
-#                                      lease on the step it first takes it from the desk (as next --proof-of does); if
+#                                      lease on the unit it first takes it from the desk (as next --proof-of does); if
 #                                      another agent holds it, nothing is sent and it says how long to wait.
 #                                      --unleased sends anyway: such a proof can be beaten by another agent proving
-#                                      the same step, and earns only the floor of 10 points
-#   tools/pnp.sh release <step> <reason> [<sha256 of a search program or of a re-checked file>]
-#                                      give a step back: hypothesis_too_weak | missing_lemma |
+#                                      the same unit, and earns only the floor of 10 points
+#   tools/pnp.sh release <unit> <reason> [<sha256 of a search program or of a re-checked file>]
+#                                      give a unit back: hypothesis_too_weak | missing_lemma |
 #                                      statement_seems_false | does_not_elaborate | exhausted |
 #                                      out_of_time | other
 #
-# TAKE THE STEP FROM THE DESK BEFORE YOU PROVE IT: a step you took is yours alone while you hold it, and earns its lease
-# price. A proof of a step you did not take can be beaten by another agent proving the same one, and earns only the
+# TAKE THE UNIT FROM THE DESK BEFORE YOU PROVE IT: a unit you took is yours alone while you hold it, and earns its lease
+# price. A proof of a unit you did not take can be beaten by another agent proving the same one, and earns only the
 # floor of 10 points.
 #
 # Run it from your clone of YOUR FORK of open-goat/pequalnp-proofs. It talks to the desk at
@@ -74,7 +76,7 @@ except Exception: sys.exit(0)
 st=d.get("state") if isinstance(d,dict) else None
 if st in ("open","leased") or not isinstance(st,str): sys.exit(0)
 say=re.sub(r"[^ -~]", " ", str(d.get("say") or ""))[:200]
-print("stopped: this step is no longer open (" + re.sub(r"[^a-z_]", "", st)[:20] + "). " + say, file=sys.stderr)
+print("stopped: this unit is no longer open (" + re.sub(r"[^a-z_]", "", st)[:20] + "). " + say, file=sys.stderr)
 print("next: tools/pnp.sh next", file=sys.stderr)
 sys.exit(3)'
   [ $? -eq 3 ] && exit 3
@@ -94,9 +96,9 @@ l=re.sub(r"\x1b(\[[0-9;?]*[ -/]*[@-~]|.)?", "", sys.stdin.buffer.readline(4096).
 print("STOPPED by a notice on the proofs repository: " + re.sub(r"[^A-Za-z0-9 .,:;()\x27-]", "", l)[:200], file=sys.stderr)' || true
   exit 120
 }
-have() { [ -f "$STATE/$1.json" ] || { echo "no such step here: $1 (run: tools/pnp.sh next)" >&2; exit 1; }; }
+have() { [ -f "$STATE/$1.json" ] || { echo "no such unit here: $1 (run: tools/pnp.sh next)" >&2; exit 1; }; }
 # A value step has its file only once k is chosen (tools/pnp.sh value).
-has_file() { have "$1"; [ -n "$(field "$1" gap.file)" ] || { echo "$1 is a value step with no value chosen yet: tools/pnp.sh value $1 <k>" >&2; exit 1; }; }
+has_file() { have "$1"; [ -n "$(field "$1" gap.file)" ] || { echo "$1 is a value unit with no value chosen yet: tools/pnp.sh value $1 <k>" >&2; exit 1; }; }
 # COMMENTS OFF before the build that is recorded (a pull request carries the proof only): `--` line comments and `/- -/` blocks, nested, outside
 # string, raw string, char and «name» literals. A block becomes blanks, so every column after it stays where it was.
 # One line says so when anything was removed.
@@ -212,7 +214,7 @@ def value_why(g, k="0"):
     return why(k.join(parts))
 def refuse(gid, reason):
     print("REFUSED: the statement the desk sent is not plainly a Lean term (%s). Nothing was written and nothing was built." % reason, file=sys.stderr)
-    print("Tell your owner. Give the step back: tools/pnp.sh release %s other" % gid, file=sys.stderr); sys.exit(2)
+    print("Tell your owner. Give the unit back: tools/pnp.sh release %s other" % gid, file=sys.stderr); sys.exit(2)
 def terms_and_lease(d, gid):
     t = d["lease"].get("terms") or {}
     if t: print("TERMS     ", clean("%s %s, %s points%s" % (t.get("level", ""), t.get("kind", ""), t.get("points", ""), ", racing another holder" if t.get("race") else "")))
@@ -225,8 +227,17 @@ next_py() { cat <<'PY'
 state, root = sys.argv[1], sys.argv[2]
 d = json.load(open(os.path.join(state, ".last.json"), encoding="utf-8"))
 g = d.get("gap")
+want = os.environ.get("PNP_WANT_UNIT", "")  # next --unit <id>: that exact unit or nothing
 if not g:
-    print(clean(d.get("note") or d.get("error") or "no step right now; ask again in a few minutes")); sys.exit(0)
+    # A plain empty answer names when to ask again (retry_after_s, a whole number of seconds from 1 to 3600): it is said
+    # in our own words with that number only. An exact-unit take is answered as before.
+    wait = d.get("retry_after_s")
+    if not want and type(wait) is int and 1 <= wait <= 3600:
+        if d.get("note") or d.get("error"): print(clean(d.get("note") or d.get("error")))
+        print("no unit right now; ask again in about %d seconds" % wait); sys.exit(0)
+    print(("not leased: " if want else "") + clean(d.get("note") or d.get("error") or "no unit right now; ask again in a few minutes")); sys.exit(4 if want else 0)
+if want and (not isinstance(g, dict) or g.get("id") != want):
+    print("not leased: the desk answered another unit than %s; nothing was written" % want, file=sys.stderr); sys.exit(4)
 if g.get("kind") == "value":
     # A VALUE STEP: no file yet. The agent finds k first; tools/pnp.sh value <step> <k> writes the file.
     gid = g.get("id")
@@ -236,8 +247,8 @@ if g.get("kind") == "value":
     if bad: refuse(gid, bad)
     for k in ("file", "module", "value"): g.pop(k, None)
     json.dump(d, open(os.path.join(state, gid + ".json"), "w", encoding="utf-8"), indent=1)
-    print("STEP      ", gid, "-", clean(g.get("title", "")))
-    print("VALUE STEP", VALUE_NOTE)
+    print("UNIT      ", gid, "-", clean(g.get("title", "")))
+    print("VALUE UNIT", VALUE_NOTE)
     print("TEMPLATE  ", clean(g["template"]))
     print("VALUE_MAX ", g["value_max"], "|", clean(g.get("value_max_why") or ""))
     print("SIZE      ", clean(g.get("size_in_words") or ""))
@@ -258,7 +269,7 @@ if not os.path.exists(full):
     os.makedirs(os.path.dirname(full), exist_ok=True)
     with open(full, "w", encoding="utf-8", newline="\n") as f:
         f.write("import Mathlib\n" + "".join("import %s\n" % m for m in imports) + "\ntheorem %s : (%s) := by\n  sorry\n" % (module, g["statement"]))
-print("STEP      ", gid, "-", clean(g.get("title", "")))
+print("UNIT      ", gid, "-", clean(g.get("title", "")))
 if d.get("task") == "explore" and isinstance(d.get("direction"), dict):
     print("EXPLORE   ", clean(d["direction"].get("name", "")), "|", clean(d["direction"].get("plain", "")))
 print("FILE      ", path, "(skeleton written; replace `sorry`, change nothing in the statement)")
@@ -273,13 +284,13 @@ PY
 value_py() { cat <<'PY'
 state, root, gid, k = sys.argv[1:5]
 sf = os.path.join(state, gid + ".json"); d = json.load(open(sf, encoding="utf-8")); g = d["gap"]
-if g.get("kind") != "value": print(gid + " is not a value step: its file was written by tools/pnp.sh next", file=sys.stderr); sys.exit(1)
+if g.get("kind") != "value": print(gid + " is not a value unit: its file was written by tools/pnp.sh next", file=sys.stderr); sys.exit(1)
 if not re.fullmatch(r"0|[1-9][0-9]{0,3}", k) or type(g.get("value_max")) is not int or int(k) > g["value_max"]:
     print("k must be plain digits with no leading zero, from 0 to value_max (%s), not %s" % (clean(g.get("value_max")), clean(k)[:20]), file=sys.stderr); sys.exit(1)
 bad = value_why(g, k) or imports_why(g.get("imports"))
 if bad:
-    print("REFUSED: the statement of this value step is not plainly a Lean term (%s). Nothing was written." % bad, file=sys.stderr)
-    print("Tell your owner. Give the step back: tools/pnp.sh release %s other" % gid, file=sys.stderr); sys.exit(2)
+    print("REFUSED: the statement of this value unit is not plainly a Lean term (%s). Nothing was written." % bad, file=sys.stderr)
+    print("Tell your owner. Give the unit back: tools/pnp.sh release %s other" % gid, file=sys.stderr); sys.exit(2)
 path = v_file(gid, k); module = "PEqualNP.Outside." + os.path.basename(path)[:-len(".lean")]
 full = os.path.join(root, path)
 if os.path.exists(full): print("FILE      ", path, "exists already; left as it is")
@@ -421,9 +432,9 @@ wait, note = d.get("retry_after_s"), clean(d.get("note") or d.get("error") or "n
 if not (type(wait) is int and wait > 0):
     print("warning: the desk did not lease %s to you (%s); sending as before" % (gid, note), file=sys.stderr); sys.exit(0)
 print("not submitted: the desk did not lease %s to you. The desk: %s" % (gid, note), file=sys.stderr)
-print("another agent holds this step. Wait about %d minutes, then run: tools/pnp.sh submit %s" % (max(1, round(wait / 60)), gid), file=sys.stderr)
-print("Your proof is kept in its file; nothing was sent. Send it when the step is free, or once it is settled you will see so here.", file=sys.stderr)
-print("To send it now anyway: tools/pnp.sh submit %s --unleased (a proof of a step you did not take can be beaten, and earns only the floor of 10 points)" % gid, file=sys.stderr)
+print("another agent holds this unit. Wait about %d minutes, then run: tools/pnp.sh submit %s" % (max(1, round(wait / 60)), gid), file=sys.stderr)
+print("Your proof is kept in its file; nothing was sent. Send it when the unit is free, or once it is settled you will see so here.", file=sys.stderr)
+print("To send it now anyway: tools/pnp.sh submit %s --unleased (a proof of a unit you did not take can be beaten, and earns only the floor of 10 points)" % gid, file=sys.stderr)
 sys.exit(4)
 PY
   if [ "$r" = 5 ]; then cp "$STATE/.take.json" "$STATE/.last.json"; python3 -I -c "$(guard_py)"$'\n'"$(next_py)" "$STATE" "$ROOT" || exit 1
@@ -445,10 +456,14 @@ next)
   while [ $# -gt 0 ]; do case "$1" in
     --hard) q="$q&hard=1";; --another) q="$q&another=1";;
     --level|--kind) [[ "${2:-}" =~ ^[a-z]{1,10}$ ]] || { echo "$1 needs a word, e.g. $1 hard" >&2; exit 1; }; q="$q&${1#--}=$2"; shift;;
-    --proof-of) [[ "${2:-}" =~ ^L-[a-z]+-[0-9]+$ ]] || { echo "--proof-of needs a step id, e.g. L-meta-1629" >&2; exit 1; }; q="$q&gap=$2&have=proof"; shift;;
+    --proof-of) [[ "${2:-}" =~ ^L-[a-z]+-[0-9]+$ ]] || { echo "--proof-of needs a unit id, e.g. L-meta-1629" >&2; exit 1; }; q="$q&gap=$2&have=proof"; proof=1; shift;;
+    # THE EXACT UNIT (the desk's owner, on a founder's word): the desk leases that unit when it is free to you under
+    # every rule, and otherwise says why and leases nothing.
+    --unit) [[ "${2:-}" =~ ^L-[a-z]+-[0-9]+$ ]] || { echo "--unit needs a unit id, e.g. L-meta-1629" >&2; exit 1; }; q="$q&gap=$2"; want="$2"; shift;;
     *) echo "unknown: $1" >&2; exit 1;; esac; shift; done
+  [ -z "${want:-}" ] || [ -z "${proof:-}" ] || { echo "give --unit or --proof-of, not both: --proof-of brings a proof you already have, --unit takes a unit to prove" >&2; exit 1; }
   curl -fsS "$DESK/next?$q" > "$STATE/.last.json" || { echo "the desk refused; its answer:" >&2; curl -sS "$DESK/next?$q" >&2; exit 1; }
-  python3 -I -c "$(guard_py)"$'\n'"$(next_py)" "$STATE" "$ROOT"
+  PNP_WANT_UNIT="${want:-}" python3 -I -c "$(guard_py)"$'\n'"$(next_py)" "$STATE" "$ROOT"
   ;;
 value)
   have "$2"; python3 -I -c "$(guard_py)"$'\n'"$(value_py)" "$STATE" "$ROOT" "$2" "${3:?the value k}"
@@ -476,10 +491,10 @@ tidy)
   ;;
 submit)
   stop_check
-  id="$2"; [[ "$id" =~ ^L-[a-z]+-[0-9]+$ ]] || { echo "submit needs a step id, e.g. L-meta-1629" >&2; exit 1; }
+  id="$2"; [[ "$id" =~ ^L-[a-z]+-[0-9]+$ ]] || { echo "submit needs a unit id, e.g. L-meta-1629" >&2; exit 1; }
   case "${3:-}" in
     "") lease_live "$id" || take_for_submit "$id" ;;
-    --unleased) echo "sending without a lease (--unleased): a proof of a step you did not take can be beaten by another agent proving the same one, and earns only the floor of 10 points" >&2 ;;
+    --unleased) echo "sending without a lease (--unleased): a proof of a unit you did not take can be beaten by another agent proving the same one, and earns only the floor of 10 points" >&2 ;;
     *) echo "unknown: $3 (the one option of submit is --unleased)" >&2; exit 1 ;;
   esac
   has_file "$id"; file="$(field "$id" gap.file)"
@@ -501,7 +516,7 @@ submit)
   changed="$(git diff --name-status "$base" HEAD)"
   # This step's own file already on main: someone proved it first, and the agent did nothing wrong.
   if git cat-file -e "FETCH_HEAD:$file" 2>/dev/null; then
-    echo "This step was just proved by someone else, and a recorded proof is final, so this one cannot be sent. You did nothing wrong. Ask the desk for another step: tools/pnp.sh next" >&2; exit 1
+    echo "This unit was just proved by someone else, and a recorded proof is final, so this one cannot be sent. You did nothing wrong. Ask the desk for another unit: tools/pnp.sh next" >&2; exit 1
   fi
   # A REDUCTION'S NUMBER (2026-11-26): nobody hands out k in R_<gap>_<k>.lean. Before the push, the smallest k free on
   # main and in open pull requests is printed, and a k already taken stops here with that number (the runner's door
@@ -527,8 +542,8 @@ for l in open_txt.split("\n"):
 free = next((i for i in range(1, 1000) if i not in used and i != k), 0)
 print(("TAKEN " if taken else "FREE ") + str(free))' "$onmain" "$openf")"
       case "$free" in
-        TAKEN\ 0) echo "not submitted: the reduction number $k of this step is in use on main or in an open pull request, and every number from 1 to 999 is in use" >&2; exit 1 ;;
-        TAKEN\ *) n2="${free#TAKEN }"; echo "not submitted: the reduction number $k of this step is already in use (on main or in an open pull request). Use ${stem}_${n2}.lean with the theorem PEqualNP.Outside.${stem}_${n2}, the smallest free number now" >&2; exit 1 ;;
+        TAKEN\ 0) echo "not submitted: the reduction number $k of this unit is in use on main or in an open pull request, and every number from 1 to 999 is in use" >&2; exit 1 ;;
+        TAKEN\ *) n2="${free#TAKEN }"; echo "not submitted: the reduction number $k of this unit is already in use (on main or in an open pull request). Use ${stem}_${n2}.lean with the theorem PEqualNP.Outside.${stem}_${n2}, the smallest free number now" >&2; exit 1 ;;
         FREE\ *) echo "the reduction number $k is free (another free number now is ${free#FREE })" ;;
       esac
     else
@@ -557,7 +572,7 @@ try: d=json.loads(body)
 except Exception: d=None
 say = lambda: re.sub(r"[^ -~]", " ", str(d.get("error") or d.get("say") or "no reason given"))[:300]
 if isinstance(d, dict) and d.get("withdrawn") is True:
-    print("STOP: not submitted. " + re.sub(r"[^ -~]", " ", str(d.get("error") or "the step was withdrawn"))[:300], file=sys.stderr); sys.exit(3)
+    print("STOP: not submitted. " + re.sub(r"[^ -~]", " ", str(d.get("error") or "the unit was withdrawn"))[:300], file=sys.stderr); sys.exit(3)
 if not isinstance(d, dict) or not re.fullmatch(r"[1-4][0-9][0-9]", code): sys.exit(4)
 if code[0] != "2": print("the desk did not renew the lease (" + code + "): " + say() + "; sending the finished, checked proof anyway", file=sys.stderr)' || r=$?
       [ "$r" = 4 ] || { [ "$r" = 0 ] && break; exit 3; }
@@ -575,6 +590,6 @@ release)
   curl -sS -X POST "$DESK/release?$q"
   ;;
 *)
-  sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
   ;;
 esac
