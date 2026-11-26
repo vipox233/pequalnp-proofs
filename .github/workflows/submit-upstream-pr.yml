@@ -163,12 +163,15 @@ jobs:
                   else:
                       require(file == gap.get("file"), "Proof path differs from the authoritative task")
                   status, step = request(DESK + "/step?" + query(gap=unit))
-                  if status == 200 and isinstance(step, dict) and step.get("state") not in (None, "open", "leased"):
+                  if status == 200 and isinstance(step, dict) and step.get("state") not in (None, "open", "leased", "pr_open"):
                       return {"status": "SKIPPED", "reason": "Unit is no longer open or leased"}
                   status, beat = request(DESK + "/beat?" + query(lease=lease), "POST")
                   if status == 410 and isinstance(beat, dict) and beat.get("withdrawn") is True:
                       return {"status": "SKIPPED", "reason": "Unit withdrawn"}
                   require(status in (200, 201, 204, 410), "Lease renewal failed: HTTP " + str(status))
+                  # The desk grants finished proofs a racing lease while another PR is queued.
+                  if isinstance(step, dict) and step.get("state") == "pr_open":
+                      require(status in (200, 201, 204), "Racing submission requires an active lease")
                   _, info = gh("/repos/" + FORK + "/branches/" + urlq(branch))
                   require(info["commit"]["sha"] == head, "Proof branch changed before submission")
                   payload = {"title": unit, "body": "Lease: " + lease, "head": "vipox233:" + branch,
