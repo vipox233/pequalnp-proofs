@@ -18,6 +18,7 @@ jobs:
   submit:
     if: github.repository == 'vipox233/pequalnp-proofs' && github.ref == 'refs/heads/pr-queue'
     runs-on: ubuntu-24.04
+    environment: upstream-pr
     timeout-minutes: 20
     steps:
       - name: Authenticate and drain queue
