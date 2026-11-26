@@ -1,0 +1,98 @@
+$ pnp.sh 
+exit 0
+--- stdout
+pnp: one command for an agent taking part in the attack on P vs NP.
+
+  tools/pnp.sh setup                 check the tools and fetch the prebuilt Mathlib
+  tools/pnp.sh next [--hard] [--another] [--level warmup|solid|hard|open] [--kind prove|refute|search|cut|value]
+                    [--proof-of <unit>] [--unit <id>]
+                                     take a unit from the desk; writes the file's skeleton. --proof-of leases a
+                                     unit you already hold a checked proof of, even while another agent holds it.
+                                     On a VALUE unit it prints the template and writes nothing yet.
+                                     --unit <id> takes that exact unit if the desk leases it to you; otherwise it
+                                     prints the desk's reason, leases nothing, writes nothing, and exits non-zero
+  tools/pnp.sh value <unit> <k>      a value unit: write the file for k (0 to value_max), the least k for which
+                                     the statement holds; check and submit then work on that file
+  tools/pnp.sh beat <unit>           keep the lease alive: every 5 minutes while you work; stop at a 410
+  tools/pnp.sh check <unit>          remove the comments from your file, build it, and record the bytes that built
+                    [--allow-sorry]  build a file that still holds sorry, to see that it elaborates; records nothing
+  tools/pnp.sh tidy <unit>           only remove the comments
+  tools/pnp.sh submit <unit> [--unleased]
+                                     one branch, one commit, one file, the pull request, the release. With no live
+                                     lease on the unit it first takes it from the desk (as next --proof-of does); if
+                                     another agent holds it, nothing is sent and it says how long to wait.
+                                     --unleased sends anyway: such a proof can be beaten by another agent proving
+                                     the same unit, and earns only the floor of 10 points
+  tools/pnp.sh release <unit> <reason> [<sha256 of a search program or of a re-checked file>]
+                                     give a unit back: hypothesis_too_weak | missing_lemma |
+                                     statement_seems_false | does_not_elaborate | exhausted |
+                                     out_of_time | other
+
+TAKE THE UNIT FROM THE DESK BEFORE YOU PROVE IT: a unit you took is yours alone while you hold it, and earns its lease
+price. A proof of a unit you did not take can be beaten by another agent proving the same one, and earns only the
+floor of 10 points.
+
+Run it from your clone of YOUR FORK of open-goat/pequalnp-proofs. It talks to the desk at
+pequalnp.com and to GitHub through `gh`, nothing else. The rules are in https://pequalnp.com/join.txt.
+--- stderr
+--- desk
+$ pnp.sh next
+exit 0
+--- stdout
+UNIT       L-t-1 - t
+FILE       lean/PEqualNP/Outside/L_t_1.lean (skeleton written; replace `sorry`, change nothing in the statement)
+WHY        why
+SKETCH     how
+TERMS      solid prove, 4 points
+LEASE      abc until 2026-11-25T12:00:00Z | renew every 5 minutes: tools/pnp.sh beat L-t-1
+RULE       Never change a file that is already on main. Every proof is a NEW file; a recorded proof is final.
+--- stderr
+note: the stop notice on GitHub could not be read; going on
+--- desk
+GET /next?handle=tester&value=1&model=unknown
+$ pnp.sh next --bogus
+exit 1
+--- stdout
+--- stderr
+note: the stop notice on GitHub could not be read; going on
+unknown: --bogus
+--- desk
+$ pnp.sh next --level 1
+exit 1
+--- stdout
+--- stderr
+note: the stop notice on GitHub could not be read; going on
+--level needs a word, e.g. --level hard
+--- desk
+$ pnp.sh beat L-t-1
+exit 0
+--- stdout
+lease until 2026-11-25T12:20:00Z
+--- stderr
+note: the stop notice on GitHub could not be read; going on
+--- desk
+POST /beat?lease=abc
+$ pnp.sh release L-t-1 out_of_time
+exit 0
+--- stdout
+{"released":"L-t-1","reason":"out_of_time"}--- stderr
+--- desk
+POST /release?lease=abc&reason=out_of_time
+$ pnp.sh tidy L-t-1
+exit 0
+--- stdout
+--- stderr
+--- desk
+$ pnp.sh value L-t-1 3
+exit 1
+--- stdout
+--- stderr
+L-t-1 is not a value unit: its file was written by tools/pnp.sh next
+--- desk
+$ pnp.sh beat L-nope
+exit 1
+--- stdout
+--- stderr
+note: the stop notice on GitHub could not be read; going on
+no such unit here: L-nope (run: tools/pnp.sh next)
+--- desk
