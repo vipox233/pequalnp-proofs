@@ -1,0 +1,238 @@
+name: Submit upstream proof PRs
+
+on:
+  push:
+    branches: [pr-queue]
+    paths:
+      - '.github/workflows/submit-upstream-pr.yml'
+      - 'pr-queue/requests/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-proof-queue
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    if: github.repository == 'vipox233/pequalnp-proofs' && github.ref == 'refs/heads/pr-queue'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Authenticate and drain queue
+        env:
+          UPSTREAM_PR_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
+          QUEUE_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          
+          FORK = "vipox233/pequalnp-proofs"
+          UPSTREAM = "open-goat/pequalnp-proofs"
+          CONTROL = "pr-queue"
+          ROOT = "pr-queue"
+          API = "https://api.github.com"
+          DESK = "https://pequalnp.com/desk"
+          ROW = "https://pequalnp-desk.pequalnp.workers.dev/desk/row"
+          PAT = os.environ["UPSTREAM_PR_TOKEN"]
+          QUEUE = os.environ["QUEUE_TOKEN"]
+          RUN = "https://github.com/" + FORK + "/actions/runs/" + os.environ["GITHUB_RUN_ID"]
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          
+          opener = urllib.request.build_opener(NoRedirect())
+          
+          def request(url, method="GET", data=None, token=None):
+              headers = {"User-Agent": "pnp-pr-queue", "Accept": "application/json"}
+              if token:
+                  if not url.startswith(API + "/"):
+                      raise RuntimeError("Invalid authenticated endpoint")
+                  headers.update({"Authorization": "Bearer " + token,
+                                  "Accept": "application/vnd.github+json",
+                                  "X-GitHub-Api-Version": "2022-11-28"})
+              payload = None if data is None else json.dumps(data).encode()
+              if payload is not None:
+                  headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(url, data=payload, headers=headers, method=method)
+              try:
+                  with opener.open(req, timeout=25) as r:
+                      status, raw = r.status, r.read(20_000_001)
+              except urllib.error.HTTPError as e:
+                  status, raw = e.code, e.read(65536)
+              if len(raw) > 20_000_000:
+                  raise RuntimeError("Response too large")
+              try:
+                  body = json.loads(raw) if raw else None
+              except (ValueError, UnicodeError):
+                  body = None
+              return status, body
+          
+          def gh(path, method="GET", data=None, token=QUEUE, expected=(200,)):
+              status, body = request(API + path, method, data, token)
+              if status not in expected:
+                  raise RuntimeError("GitHub API HTTP " + str(status) + " (" + method + ")")
+              return status, body
+          
+          def urlq(value):
+              return urllib.parse.quote(value, safe="")
+          
+          def query(**values):
+              return urllib.parse.urlencode(values)
+          
+          def contents(path, ref=CONTROL):
+              return gh("/repos/" + FORK + "/contents/" + path + "?" + query(ref=ref),
+                        expected=(200, 404))
+          
+          def read_json(path):
+              status, item = contents(path)
+              if status != 200 or item.get("type") != "file" or item.get("size", 0) > 8192:
+                  raise RuntimeError("Missing or oversized queue request")
+              return item["sha"], json.loads(base64.b64decode(item["content"]))
+          
+          def match(pattern, value):
+              return isinstance(value, str) and re.fullmatch(pattern, value) is not None
+          
+          def require(condition, message):
+              if not condition:
+                  raise RuntimeError(message)
+          
+          def existing(unit, branch, head):
+              path = "/repos/" + UPSTREAM + "/pulls?" + query(
+                  state="all", head="vipox233:" + branch, base="main", per_page=100)
+              _, prs = gh(path, token=PAT)
+              for pr in prs:
+                  if pr["head"]["sha"] == head and pr["title"] == unit and pr["user"]["login"] == "vipox233":
+                      return pr
+              if any(p["state"] == "open" for p in prs):
+                  raise RuntimeError("An open PR already uses this proof branch")
+              return None
+          
+          def process(q):
+              require(isinstance(q, dict), "Request must be a JSON object")
+              unit, branch, head, file, lease = (q.get(k) for k in ("unit", "branch", "head_sha", "file", "lease"))
+              require(match(r"L-[a-z0-9]+(?:-[a-z0-9]+)*", unit) and len(unit) <= 64, "Invalid unit")
+              require(match(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,159}", branch)
+                      and branch not in ("main", CONTROL), "Invalid proof branch")
+              require(match(r"[0-9a-f]{40}", head), "Invalid proof head SHA")
+              require(match(r"lean/PEqualNP/Outside/[LV]_[A-Za-z0-9_]+\.lean", file), "Invalid proof path")
+              require(match(r"[A-Za-z0-9-]{1,64}", lease), "Invalid lease")
+              pr = existing(unit, branch, head)
+              if pr is not None and pr["state"] == "closed" and not pr.get("merged_at"):
+                  return {"status": "SKIPPED", "reason": "Matching PR was closed", "pr_url": pr["html_url"]}
+              if pr is None:
+                  status, _ = gh("/repos/" + UPSTREAM + "/contents/STOP?ref=main",
+                                 token=PAT, expected=(200, 404))
+                  if status == 200:
+                      return {"status": "SKIPPED", "reason": "Upstream STOP notice"}
+                  _, info = gh("/repos/" + FORK + "/branches/" + urlq(branch))
+                  require(info["commit"]["sha"] == head, "Proof branch no longer matches validated SHA")
+                  cmp_path = "/repos/" + UPSTREAM + "/compare/main..." + urlq("vipox233:" + branch)
+                  _, diff = gh(cmp_path, token=PAT)
+                  require(diff.get("ahead_by") == 1 and len(diff.get("commits", [])) == 1
+                          and diff["commits"][0]["sha"] == head, "PR must contain exactly one proof commit")
+                  files = diff.get("files", [])
+                  require(len(files) == 1 and files[0]["status"] == "added"
+                          and files[0]["filename"] == file, "PR must add exactly the declared Lean file")
+                  status, proof = contents(file, head)
+                  require(status == 200 and proof.get("type") == "file"
+                          and 0 < proof.get("size", 0) <= 524288, "Invalid proof file size or type")
+                  status, row = request(ROW + "?" + query(gap=unit))
+                  require(status == 200 and isinstance(row, dict), "Cannot read authoritative task row")
+                  candidates = [g for g in row.get("gaps", []) if g.get("id") == unit]
+                  if not candidates:
+                      return {"status": "SKIPPED", "reason": "Unit no longer open"}
+                  require(len(candidates) == 1, "Ambiguous authoritative task row")
+                  gap = candidates[0]
+                  if gap.get("kind") == "value":
+                      stem = "lean/PEqualNP/Outside/V_" + unit[2:].replace("-", "_")
+                      m = re.fullmatch(re.escape(stem) + r"__k(0|[1-9][0-9]*)\.lean", file)
+                      require(m is not None and int(m[1]) <= gap.get("value_max", -1), "Wrong value proof path")
+                  else:
+                      require(file == gap.get("file"), "Proof path differs from the authoritative task")
+                  status, step = request(DESK + "/step?" + query(gap=unit))
+                  if status == 200 and isinstance(step, dict) and step.get("state") not in (None, "open", "leased"):
+                      return {"status": "SKIPPED", "reason": "Unit is no longer open or leased"}
+                  status, beat = request(DESK + "/beat?" + query(lease=lease), "POST")
+                  if status == 410 and isinstance(beat, dict) and beat.get("withdrawn") is True:
+                      return {"status": "SKIPPED", "reason": "Unit withdrawn"}
+                  require(status in (200, 201, 204, 410), "Lease renewal failed: HTTP " + str(status))
+                  _, info = gh("/repos/" + FORK + "/branches/" + urlq(branch))
+                  require(info["commit"]["sha"] == head, "Proof branch changed before submission")
+                  payload = {"title": unit, "body": "Lease: " + lease, "head": "vipox233:" + branch,
+                             "base": "main", "maintainer_can_modify": True}
+                  status, pr = gh("/repos/" + UPSTREAM + "/pulls", "POST", payload, PAT, (201, 422))
+                  if status == 422:
+                      pr = existing(unit, branch, head)
+                      require(pr is not None, "PR creation rejected: HTTP 422")
+              require(pr["head"]["sha"] == head and pr["title"] == unit, "PR head or title differs from request")
+              # A created PR is a durable result even if the release call has a transient failure.
+              release_http = None
+              try:
+                  release_http, _ = request(DESK + "/release?" + query(lease=lease, reason="submitted"), "POST")
+              except (OSError, RuntimeError):
+                  pass
+              return {"status": "SUBMITTED", "pr": pr["number"], "pr_url": pr["html_url"],
+                      "head_sha": head, "lease_released": release_http in (200, 201, 204),
+                      "release_http": release_http}
+          
+          def save_result(name, result):
+              payload = {"message": "queue: record " + name,
+                         "content": base64.b64encode((json.dumps(result, indent=2) + "\n").encode()).decode(),
+                         "branch": CONTROL}
+              path = "/repos/" + FORK + "/contents/" + ROOT + "/results/" + name
+              for attempt in range(3):
+                  status, _ = gh(path, "PUT", payload, expected=(201, 200, 409, 422))
+                  if status in (200, 201):
+                      return
+                  status, _ = contents(ROOT + "/results/" + name)
+                  if status == 200:
+                      return
+                  time.sleep(2)
+              raise RuntimeError("Could not persist queue result")
+          
+          def main():
+              require(bool(PAT), "UPSTREAM_PR_TOKEN secret is missing")
+              _, user = gh("/user", token=PAT)
+              require(user.get("login") == "vipox233", "PAT authenticates as a different GitHub user")
+              print("PAT authentication OK: vipox233", flush=True)
+              status, requests = contents(ROOT + "/requests")
+              if status == 404:
+                  print("Queue empty; authentication-only check passed.")
+                  return
+              require(isinstance(requests, list), "Invalid request directory")
+              status, results = contents(ROOT + "/results")
+              done = {x["name"] for x in results} if status == 200 else set()
+              failures = 0
+              for item in sorted(requests, key=lambda x: x["name"]):
+                  name = item["name"]
+                  if name in done or item.get("type") != "file" or not match(r"[A-Za-z0-9_-]{1,160}\.json", name):
+                      continue
+                  try:
+                      _, q = read_json(ROOT + "/requests/" + name)
+                      result = process(q)
+                  except Exception as exc:
+                      # Never echo response bodies or arbitrary exception text into logs.
+                      reason = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+                      result = {"status": "FAILED", "reason": reason}
+                      failures += 1
+                  result["run_url"] = RUN
+                  save_result(name, result)
+                  print(name + ": " + result["status"], flush=True)
+                  time.sleep(3)
+              if failures:
+                  sys.exit(1)
+          
+          main()
+          PY
