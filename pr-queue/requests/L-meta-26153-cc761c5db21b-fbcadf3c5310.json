@@ -1,0 +1,10 @@
+{
+  "unit": "L-meta-26153",
+  "file": "lean/PEqualNP/Outside/L_meta_26153.lean",
+  "lease": "22291cd6-c71a-44a7-a05e-d259048354d8",
+  "base_sha": "49d9011c5a11fd8210b51f8111badb8a056f1b2e",
+  "proof_sha256": "fbcadf3c53100816d7334fc07b2c3307cb03b351e90b9d6401e149d95e2b474e",
+  "statement_hash": "cc761c5db21ba13932de83ca0e020859bcd4b9651ade00dac5308b3d5e82ff88",
+  "branch": "hub/L-meta-26153-49d9011c5a11-fbcadf3c53100816",
+  "head_sha": "7ad4ac692ac8806a752713d4de819c855c45cee5"
+}
