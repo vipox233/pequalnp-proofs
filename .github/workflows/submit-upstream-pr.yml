@@ -56,7 +56,13 @@ jobs:
           
           opener = urllib.request.build_opener(NoRedirect())
           
+          last_desk_request = 0.0
+
           def request(url, method="GET", data=None, token=None):
+              global last_desk_request
+              if url.startswith(DESK + "/") or url.startswith(ROW + "?"):
+                  time.sleep(max(0, 3.5 - (time.monotonic() - last_desk_request)))
+                  last_desk_request = time.monotonic()
               headers = {"User-Agent": "pnp-pr-queue", "Accept": "application/json"}
               if token:
                   if not url.startswith(API + "/"):
@@ -99,7 +105,7 @@ jobs:
           
           def read_json(path):
               status, item = contents(path)
-              if status != 200 or item.get("type") != "file" or item.get("size", 0) > 8192:
+              if status != 200 or item.get("type") != "file" or item.get("size", 0) > 750000:
                   raise RuntimeError("Missing or oversized queue request")
               return item["sha"], json.loads(base64.b64decode(item["content"]))
           
@@ -153,22 +159,60 @@ jobs:
               return hashlib.sha256(b).hexdigest()
 
           def gap_hash(g):
-              data = {k: g.get(k) for k in ("id","statement","file","module","imports","kind","template","value_max","refutation")}
+              value = g.get("kind") == "value" or isinstance(g.get("template"), str)
+              data = {k: g.get(k) for k in ("id","statement","file","module","template","value_max")}
+              data["imports"] = sorted(g.get("imports") or [])
+              if value:
+                  data.update(file=None,module=None,statement=None)
               return proof_hash(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
+
+          def inline_branch(q):
+              unit, file, base, digest = (q[k] for k in ("unit","file","base_sha","proof_sha256"))
+              require(match(r"[a-f0-9]{40}",base) and match(r"[a-f0-9]{64}",digest),"Invalid inline receipt")
+              require(isinstance(q.get("proof_content_b64"),str) and len(q["proof_content_b64"]) <= 699052,"Inline proof too large")
+              raw = base64.b64decode(q["proof_content_b64"],validate=True)
+              require(0 < len(raw) <= 524288 and proof_hash(raw) == digest,"Inline proof hash mismatch")
+              raw.decode("utf-8")
+              branch = "hub/" + unit + "-" + base[:12] + "-" + digest[:16]
+              prefix = "/repos/" + FORK
+              status, info = gh(prefix + "/git/ref/heads/" + urlq(branch), expected=(200,404))
+              if status == 200:
+                  return branch, info["object"]["sha"]
+              status, parent = gh(prefix + "/git/commits/" + base, expected=(200,404))
+              require(status == 200, "Validated base unavailable in fork; run sync and retry")
+              status, blob = gh(prefix + "/git/blobs","POST",{"content":q["proof_content_b64"],"encoding":"base64"},expected=(201,))
+              _, tree = gh(prefix + "/git/trees","POST",{"base_tree":parent["tree"]["sha"],"tree":[{"path":file,"mode":"100644","type":"blob","sha":blob["sha"]}]},expected=(201,))
+              _, commit = gh(prefix + "/git/commits","POST",{"message":unit,"tree":tree["sha"],"parents":[base]},expected=(201,))
+              status, ref = gh(prefix + "/git/refs","POST",{"ref":"refs/heads/"+branch,"sha":commit["sha"]},expected=(201,422))
+              if status == 422:
+                  _, ref = gh(prefix + "/git/ref/heads/" + urlq(branch))
+              return branch,ref["object"]["sha"]
 
           def process(q):
               require(isinstance(q, dict), "Request must be a JSON object")
               unit, branch, head, file, lease = (q.get(k) for k in ("unit", "branch", "head_sha", "file", "lease"))
               require(match(r"L-[a-z0-9]+(?:-[a-z0-9]+)*", unit) and len(unit) <= 64, "Invalid unit")
-              require(match(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,159}", branch)
-                      and branch not in ("main", CONTROL), "Invalid proof branch")
-              require(match(r"[0-9a-f]{40}", head), "Invalid proof head SHA")
+              inline = "proof_content_b64" in q
               require(match(r"lean/PEqualNP/Outside/[LV]_[A-Za-z0-9_]+\.lean", file), "Invalid proof path")
+              if not inline:
+                  require(match(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,159}", branch)
+                          and branch not in ("main", CONTROL), "Invalid proof branch")
+                  require(match(r"[0-9a-f]{40}", head), "Invalid proof head SHA")
+              else:
+                  require(branch is None and head is None,"Use inline or prebuilt branch, not both")
               require(match(r"[A-Za-z0-9-]{1,64}", lease), "Invalid lease")
               enhanced = any(k in q for k in ("proof_sha256", "base_sha", "statement_hash"))
               if enhanced:
                   require(match(r"[a-f0-9]{64}", q.get("proof_sha256")) and match(r"[a-f0-9]{64}", q.get("statement_hash"))
                           and match(r"[a-f0-9]{40}", q.get("base_sha")), "Invalid validation receipt")
+              if inline:
+                  duplicate = account_existing(unit)
+                  if duplicate is not None:
+                      return {"status":"DUPLICATE","reason":"Account already has an open or merged PR for this unit","pr":duplicate["number"],"pr_url":duplicate["html_url"],"existing_head_sha":duplicate["head"]["sha"]}
+                  status, _ = gh("/repos/" + UPSTREAM + "/contents/STOP?ref=main",token=PAT,expected=(200,404))
+                  if status == 200:
+                      return {"status":"SKIPPED","reason":"Upstream STOP notice"}
+                  branch, head = inline_branch(q)
               pr = existing(unit, branch, head)
               if pr is not None:
                   if pr["state"] == "closed" and not pr.get("merged_at"):

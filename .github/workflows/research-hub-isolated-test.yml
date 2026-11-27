@@ -1,0 +1,16 @@
+name: Research Hub isolated queue tests
+on:
+  push:
+    branches: [research-hub-queue-v2-20261127]
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test queue logic using mocked APIs only
+        run: python3 pr-queue/test-hub-queue-v2.py

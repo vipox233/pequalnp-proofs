@@ -51,4 +51,37 @@ for field,bad in [("proof_sha256","0"*64),("base_sha","0"*40),("statement_hash",
  try:ns["process"](dict(q,**{field:bad}));raise AssertionError("accepted bad "+field)
  except RuntimeError:assert not any(x[0]=="POST" for x in calls)
 calls.clear();res=ns["process"](q);assert res["status"]=="SUBMITTED" and res["lease_released"] and sum(x[0]=="POST" and x[1].endswith("/pulls") for x in calls)==1
-print(json.dumps({"ok":True,"duplicate_search":True,"duplicate_ledger":True,"same_head_idempotent":True,"proof_hash_mismatch":True,"base_mismatch":True,"statement_mismatch":True,"mock_racing_submit":True,"real_pr_created":False}))
+# Inline proof: mock all fork Git data operations, validate exact parent and bytes.
+inline=dict(q,proof_content_b64=base64.b64encode(proof).decode())
+inline.pop("branch");inline.pop("head_sha")
+branch="hub/"+unit+"-"+base[:12]+"-"+q["proof_sha256"][:16]
+forkcalls=[]
+def fork_gh(path,method="GET",data=None,token=None,expected=(200,)):
+ forkcalls.append((method,path,data))
+ if "/git/ref/heads/" in path:return 404,None
+ if path.endswith("/git/commits/"+base):return 200,{"tree":{"sha":"c"*40}}
+ if path.endswith("/git/blobs") and method=="POST":
+  assert base64.b64decode(data["content"])==proof
+  return 201,{"sha":"d"*40}
+ if path.endswith("/git/trees") and method=="POST":
+  assert data["base_tree"]=="c"*40 and data["tree"]==[{"path":file,"mode":"100644","type":"blob","sha":"d"*40}]
+  return 201,{"sha":"e"*40}
+ if path.endswith("/git/commits") and method=="POST":
+  assert data["parents"]==[base] and data["tree"]=="e"*40
+  return 201,{"sha":head}
+ if path.endswith("/git/refs") and method=="POST":
+  assert data=={"ref":"refs/heads/"+branch,"sha":head}
+  return 201,{"object":{"sha":head}}
+ raise AssertionError(path)
+ns["gh"]=fork_gh
+assert ns["inline_branch"](inline)==(branch,head)
+assert sum(m=="POST" for m,p,d in forkcalls)==4
+forkcalls.clear()
+try:ns["inline_branch"](dict(inline,proof_sha256="0"*64));raise AssertionError("bad inline hash accepted")
+except RuntimeError:assert not forkcalls
+ns["gh"]=lambda *a,**k:(200,{"object":{"sha":head}})
+assert ns["inline_branch"](inline)==(branch,head)
+ns["gh"]=gh
+ns["inline_branch"]=lambda q:(branch,head)
+calls.clear();assert ns["process"](inline)["status"]=="SUBMITTED"
+print(json.dumps({"ok":True,"duplicate_search":True,"duplicate_ledger":True,"same_head_idempotent":True,"proof_hash_mismatch":True,"base_mismatch":True,"statement_mismatch":True,"mock_racing_submit":True,"inline_git_data":True,"inline_hash_guard":True,"inline_retry_ref":True,"inline_process":True,"real_pr_created":False}))
