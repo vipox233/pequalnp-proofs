@@ -1,0 +1,9 @@
+{
+  "status": "SUBMITTED",
+  "pr": 42331,
+  "pr_url": "https://github.com/open-goat/pequalnp-proofs/pull/42331",
+  "head_sha": "e107f92fbead478c488b0fd781aea99c92cb8739",
+  "lease_released": true,
+  "release_http": 200,
+  "run_url": "https://github.com/vipox233/pequalnp-proofs/actions/runs/46047074185"
+}
