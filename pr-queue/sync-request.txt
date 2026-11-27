@@ -1,1 +1,3 @@
-initial-on-demand-sync
+research session 83b5d63db58b4dfa903dfb527070fa2f
+verified base 49d9011c5a11fd8210b51f8111badb8a056f1b2e
+requested 2026-11-27T18:00:00Z
