@@ -1,0 +1,10 @@
+{
+  "unit": "L-meta-29830",
+  "file": "lean/PEqualNP/Outside/L_meta_29830.lean",
+  "lease": "ee8d5a97-ec71-4573-a7d1-475c51cef8ac",
+  "base_sha": "49d9011c5a11fd8210b51f8111badb8a056f1b2e",
+  "proof_sha256": "3ee4b10ffcbf9d9f429f5c7057fbf085a71cc972a1d0b7b226bdc019f525c4ca",
+  "statement_hash": "6a0ab34ee85c5f46111ad5bac8e4341a7061ea6347ea603f0ead06c8c5f08c43",
+  "branch": "hub-a06a-L-meta-29830-3ee4b10ffcbf",
+  "head_sha": "2801d065a5cc589ccb18122cbe410ccb3ceae72a"
+}
