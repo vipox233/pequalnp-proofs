@@ -1,0 +1,16 @@
+import PEqualNP.Defs
+
+open PEqualNP.CircuitLowerBounds
+open PEqualNP.MetaComplexity
+
+/-- Cut for `L-meta-17838`: the circuit has a second gate, or it does not. -/
+theorem PEqualNP.Outside.R_meta_17838_1 :
+    (∀ (x1 : SimpleGraph (Fin (26 : ℕ))) (x2 : DecidableRel x1.Adj) (x3 : PEqualNP.CircuitLowerBounds.Circuit), (x1 = SimpleGraph.fromRel fun (x4 x5 : Fin (26 : ℕ)) => ↑x4 < (13 : ℕ) ∧ (13 : ℕ) ≤ ↑x5 ∧ (↑x4 + (26 : ℕ) - ↑x5) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)]) → PEqualNP.TopForm.IsLeastAO x1 x3 → PEqualNP.TopForm.TopForm x1 x3 → x3.size ≤ (64 : ℕ) → ∀ x8 < x3.size, (∀ x10 < x8, (fun (x12 : ℕ) => (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x12).op = PEqualNP.CircuitLowerBounds.GateOp.and → ∀ x14 ∈ PEqualNP.TopForm.side x3 x12 (0 : Fin (2 : ℕ)), ∀ x16 ∈ PEqualNP.TopForm.side x3 x12 (1 : Fin (2 : ℕ)), x1.Adj x14 x16) x10) → (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x8).op = PEqualNP.CircuitLowerBounds.GateOp.and → ∀ (x12 x13 : Finset (Fin (26 : ℕ))), x12 = PEqualNP.TopForm.side x3 x8 (0 : Fin (2 : ℕ)) → x13 = PEqualNP.TopForm.side x3 x8 (1 : Fin (2 : ℕ)) → (∃ (g : PEqualNP.CircuitLowerBounds.Gate), x3.gates[1]? = Option.some g) → x12.card ≤ (1 : ℕ) ∨ x13.card ≤ (1 : ℕ)) →
+    (∀ (x1 : SimpleGraph (Fin (26 : ℕ))) (x2 : DecidableRel x1.Adj) (x3 : PEqualNP.CircuitLowerBounds.Circuit), (x1 = SimpleGraph.fromRel fun (x4 x5 : Fin (26 : ℕ)) => ↑x4 < (13 : ℕ) ∧ (13 : ℕ) ≤ ↑x5 ∧ (↑x4 + (26 : ℕ) - ↑x5) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)]) → PEqualNP.TopForm.IsLeastAO x1 x3 → PEqualNP.TopForm.TopForm x1 x3 → x3.size ≤ (64 : ℕ) → ∀ x8 < x3.size, (∀ x10 < x8, (fun (x12 : ℕ) => (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x12).op = PEqualNP.CircuitLowerBounds.GateOp.and → ∀ x14 ∈ PEqualNP.TopForm.side x3 x12 (0 : Fin (2 : ℕ)), ∀ x16 ∈ PEqualNP.TopForm.side x3 x12 (1 : Fin (2 : ℕ)), x1.Adj x14 x16) x10) → (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x8).op = PEqualNP.CircuitLowerBounds.GateOp.and → ∀ (x12 x13 : Finset (Fin (26 : ℕ))), x12 = PEqualNP.TopForm.side x3 x8 (0 : Fin (2 : ℕ)) → x13 = PEqualNP.TopForm.side x3 x8 (1 : Fin (2 : ℕ)) → ¬(∃ (g : PEqualNP.CircuitLowerBounds.Gate), x3.gates[1]? = Option.some g) → x12.card ≤ (1 : ℕ) ∨ x13.card ≤ (1 : ℕ)) →
+    (∀ (x1 : SimpleGraph (Fin (26 : ℕ))) [x2 : DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit), (x1 = SimpleGraph.fromRel fun (x4 x5 : Fin (26 : ℕ)) => ↑x4 < (13 : ℕ) ∧ (13 : ℕ) ≤ ↑x5 ∧ (↑x4 + (26 : ℕ) - ↑x5) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)]) → PEqualNP.TopForm.IsLeastAO x1 x3 → PEqualNP.TopForm.TopForm x1 x3 → x3.size ≤ (64 : ℕ) → ∀ x8 < x3.size, (∀ x10 < x8, (fun (x12 : ℕ) => (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x12).op = PEqualNP.CircuitLowerBounds.GateOp.and → ∀ x14 ∈ PEqualNP.TopForm.side x3 x12 (0 : Fin (2 : ℕ)), ∀ x16 ∈ PEqualNP.TopForm.side x3 x12 (1 : Fin (2 : ℕ)), x1.Adj x14 x16) x10) → (PEqualNP.MetaComplexity.NestedCover.gateAt x3 x8).op = PEqualNP.CircuitLowerBounds.GateOp.and → ∀ (x12 x13 : Finset (Fin (26 : ℕ))), x12 = PEqualNP.TopForm.side x3 x8 (0 : Fin (2 : ℕ)) → x13 = PEqualNP.TopForm.side x3 x8 (1 : Fin (2 : ℕ)) → x12.card ≤ (1 : ℕ) ∨ x13.card ≤ (1 : ℕ)) := by
+  classical
+  intro h1 h2 x1 x2 x3
+  intros
+  by_cases h : (∃ (g : PEqualNP.CircuitLowerBounds.Gate), x3.gates[1]? = Option.some g)
+  · apply h1 <;> assumption
+  · apply h2 <;> assumption

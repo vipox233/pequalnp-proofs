@@ -1,0 +1,19 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_8117_1
+    (hLeftShore :
+      have x1 : Fin (42 : ℕ) → Fin (42 : ℕ) → Prop := fun (x1 x2 : Fin (42 : ℕ)) => ↑x1 < (21 : ℕ) ∧ (21 : ℕ) ≤ ↑x2 ∧ (↑x2 + (21 : ℕ) - ↑x1) % (21 : ℕ) ∈ [(0 : ℕ), (5 : ℕ), (7 : ℕ), (17 : ℕ), (20 : ℕ)];
+      have x2 : PEqualNP.CircuitLowerBounds.Circuit → Prop := fun (x2 : PEqualNP.CircuitLowerBounds.Circuit) => PEqualNP.MetaComplexity.Monotone2 x2 ∧ (∀ (x3 x4 : Fin (42 : ℕ)), x1 x3 x4 → x2.eval (List.ofFn fun (x6 : Fin (42 : ℕ)) => Decidable.decide (x6 = x3 ∨ x6 = x4)) = Bool.true) ∧ ∀ (x3 : Fin (42 : ℕ) → Bool), (∀ (x4 : Fin (42 : ℕ)), x3 x4 = Bool.true ↔ ∀ (x5 : Fin (42 : ℕ)), x3 x5 = Bool.true → ¬(x1 x4 x5 ∨ x1 x5 x4)) → x2.eval (List.ofFn x3) = Bool.false;
+      ∀ (x3 : PEqualNP.CircuitLowerBounds.Circuit), x2 x3 → x3.size ≤ (124 : ℕ) → (∀ (x6 : PEqualNP.CircuitLowerBounds.Circuit), x2 x6 → x3.size ≤ x6.size) → (∃ (x7 : Fin (42 : ℕ)) (x8 : ℕ) (x9 : PEqualNP.CircuitLowerBounds.Gate), ↑x7 < (21 : ℕ) ∧ x3.gates[x8]? = Option.some x9 ∧ x9.op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (x3.wires (List.ofFn fun (x10 : Fin (42 : ℕ)) => Decidable.decide (x10 = x7))).getD ((42 : ℕ) + x8) Bool.false = Bool.true) → False)
+    (hRightShore :
+      have x1 : Fin (42 : ℕ) → Fin (42 : ℕ) → Prop := fun (x1 x2 : Fin (42 : ℕ)) => ↑x1 < (21 : ℕ) ∧ (21 : ℕ) ≤ ↑x2 ∧ (↑x2 + (21 : ℕ) - ↑x1) % (21 : ℕ) ∈ [(0 : ℕ), (5 : ℕ), (7 : ℕ), (17 : ℕ), (20 : ℕ)];
+      have x2 : PEqualNP.CircuitLowerBounds.Circuit → Prop := fun (x2 : PEqualNP.CircuitLowerBounds.Circuit) => PEqualNP.MetaComplexity.Monotone2 x2 ∧ (∀ (x3 x4 : Fin (42 : ℕ)), x1 x3 x4 → x2.eval (List.ofFn fun (x6 : Fin (42 : ℕ)) => Decidable.decide (x6 = x3 ∨ x6 = x4)) = Bool.true) ∧ ∀ (x3 : Fin (42 : ℕ) → Bool), (∀ (x4 : Fin (42 : ℕ)), x3 x4 = Bool.true ↔ ∀ (x5 : Fin (42 : ℕ)), x3 x5 = Bool.true → ¬(x1 x4 x5 ∨ x1 x5 x4)) → x2.eval (List.ofFn x3) = Bool.false;
+      ∀ (x3 : PEqualNP.CircuitLowerBounds.Circuit), x2 x3 → x3.size ≤ (124 : ℕ) → (∀ (x6 : PEqualNP.CircuitLowerBounds.Circuit), x2 x6 → x3.size ≤ x6.size) → (∃ (x7 : Fin (42 : ℕ)) (x8 : ℕ) (x9 : PEqualNP.CircuitLowerBounds.Gate), (21 : ℕ) ≤ ↑x7 ∧ x3.gates[x8]? = Option.some x9 ∧ x9.op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (x3.wires (List.ofFn fun (x10 : Fin (42 : ℕ)) => Decidable.decide (x10 = x7))).getD ((42 : ℕ) + x8) Bool.false = Bool.true) → False) :
+    (have x1 : Fin (42 : ℕ) → Fin (42 : ℕ) → Prop := fun (x1 x2 : Fin (42 : ℕ)) => ↑x1 < (21 : ℕ) ∧ (21 : ℕ) ≤ ↑x2 ∧ (↑x2 + (21 : ℕ) - ↑x1) % (21 : ℕ) ∈ [(0 : ℕ), (5 : ℕ), (7 : ℕ), (17 : ℕ), (20 : ℕ)]; have x2 : PEqualNP.CircuitLowerBounds.Circuit → Prop := fun (x2 : PEqualNP.CircuitLowerBounds.Circuit) => PEqualNP.MetaComplexity.Monotone2 x2 ∧ (∀ (x3 x4 : Fin (42 : ℕ)), x1 x3 x4 → x2.eval (List.ofFn fun (x6 : Fin (42 : ℕ)) => Decidable.decide (x6 = x3 ∨ x6 = x4)) = Bool.true) ∧ ∀ (x3 : Fin (42 : ℕ) → Bool), (∀ (x4 : Fin (42 : ℕ)), x3 x4 = Bool.true ↔ ∀ (x5 : Fin (42 : ℕ)), x3 x5 = Bool.true → ¬(x1 x4 x5 ∨ x1 x5 x4)) → x2.eval (List.ofFn x3) = Bool.false; ∀ (x3 : PEqualNP.CircuitLowerBounds.Circuit), x2 x3 → x3.size ≤ (124 : ℕ) → (∀ (x6 : PEqualNP.CircuitLowerBounds.Circuit), x2 x6 → x3.size ≤ x6.size) → (∃ (x7 : Fin (42 : ℕ)) (x8 : ℕ) (x9 : PEqualNP.CircuitLowerBounds.Gate), x3.gates[x8]? = Option.some x9 ∧ x9.op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (x3.wires (List.ofFn fun (x10 : Fin (42 : ℕ)) => Decidable.decide (x10 = x7))).getD ((42 : ℕ) + x8) Bool.false = Bool.true) → False) :=
+  fun x3 hx2 hsize hmin hEx =>
+    Exists.elim hEx fun x7 hx7 =>
+      Exists.elim hx7 fun x8 hx8 =>
+        Exists.elim hx8 fun x9 hx9 =>
+          Or.elim (Nat.lt_or_ge (x7 : ℕ) (21 : ℕ))
+            (fun hlt => hLeftShore x3 hx2 hsize hmin ⟨x7, x8, x9, hlt, hx9⟩)
+            (fun hge => hRightShore x3 hx2 hsize hmin ⟨x7, x8, x9, hge, hx9⟩)

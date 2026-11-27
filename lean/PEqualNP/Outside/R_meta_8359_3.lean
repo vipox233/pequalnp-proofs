@@ -1,0 +1,37 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_8359_3
+    (hOp0Left :
+      ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit),
+        x1.size ≤ (27 : ℕ) →
+        x1.output + (1 : ℕ) = (14 : ℕ) + x1.size →
+        PEqualNP.TopForm.IsAO2 (14 : ℕ) x1 →
+        (∀ x5 ∈ x1.gates, x5.inputs.Nodup) →
+        (∀ (x6 : Fin (14 : ℕ) → Bool), x1.eval (List.ofFn x6) = Bool.true ↔ ∃ (x7 : Fin (7 : ℕ)) (x8 : Fin (7 : ℕ)), (x7 = x8 ∨ x7 = x8 + (1 : Fin (7 : ℕ)) ∨ x7 = x8 + (3 : Fin (7 : ℕ))) ∧ x6 (Fin.castAdd (7 : ℕ) x7) = Bool.true ∧ x6 (Fin.natAdd (7 : ℕ) x8) = Bool.true) →
+        have x7 : ℕ → Bool := fun (x7 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x7 (PEqualNP.EdgeOwnership.pairInput (0 : Fin (14 : ℕ)) (7 : Fin (14 : ℕ)));
+        have x8 : ℕ → Bool := fun (x8 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x8 (PEqualNP.EdgeOwnership.pairInput (0 : Fin (14 : ℕ)) (0 : Fin (14 : ℕ)));
+        have x9 : ℕ → Bool := fun (x9 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x9 (PEqualNP.EdgeOwnership.pairInput (7 : Fin (14 : ℕ)) (7 : Fin (14 : ℕ)));
+        have x10 : ℕ → Fin (2 : ℕ) → ℕ := PEqualNP.TopForm.opnd x1;
+        have x11 : ℕ → ℕ → Prop := PEqualNP.EdgeOwnership.InCone (14 : ℕ) x1;
+        have x12 : ℕ → Prop := fun (x12 : ℕ) => (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x12).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ x7 ((14 : ℕ) + x12) = Bool.true ∧ x8 ((14 : ℕ) + x12) = Bool.false ∧ x9 ((14 : ℕ) + x12) = Bool.false;
+        ∀ (x14 x15 : ℕ), x14 < x15 → ¬x11 x14 x15 → ¬x11 x15 x14 → x11 x14 (x1.size - (1 : ℕ)) → x11 x15 (x1.size - (1 : ℕ)) → x12 x14 → x12 x15 → (∀ (x23 : Fin (2 : ℕ)), x8 (x10 x14 x23) = Bool.false) → (∀ (x24 : Fin (2 : ℕ)), x9 (x10 x15 x24) = Bool.false) → (∃ (x25 : ℕ), x12 x25 ∧ x8 (x10 x25 (0 : Fin (2 : ℕ))) = Bool.true ∧ (x8 (x10 x25 (1 : Fin (2 : ℕ))) = Bool.true ∨ x9 (x10 x25 (1 : Fin (2 : ℕ))) = Bool.true) ∧ x11 x25 x14 ∧ x11 x25 x15 ∧ ((∀ (x26 : Fin (2 : ℕ)), x9 (x10 x14 x26) = Bool.false) ∨ ∀ (x26 : Fin (2 : ℕ)), x8 (x10 x15 x26) = Bool.false)) → False)
+    (hOp0Right :
+      ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit),
+        x1.size ≤ (27 : ℕ) →
+        x1.output + (1 : ℕ) = (14 : ℕ) + x1.size →
+        PEqualNP.TopForm.IsAO2 (14 : ℕ) x1 →
+        (∀ x5 ∈ x1.gates, x5.inputs.Nodup) →
+        (∀ (x6 : Fin (14 : ℕ) → Bool), x1.eval (List.ofFn x6) = Bool.true ↔ ∃ (x7 : Fin (7 : ℕ)) (x8 : Fin (7 : ℕ)), (x7 = x8 ∨ x7 = x8 + (1 : Fin (7 : ℕ)) ∨ x7 = x8 + (3 : Fin (7 : ℕ))) ∧ x6 (Fin.castAdd (7 : ℕ) x7) = Bool.true ∧ x6 (Fin.natAdd (7 : ℕ) x8) = Bool.true) →
+        have x7 : ℕ → Bool := fun (x7 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x7 (PEqualNP.EdgeOwnership.pairInput (0 : Fin (14 : ℕ)) (7 : Fin (14 : ℕ)));
+        have x8 : ℕ → Bool := fun (x8 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x8 (PEqualNP.EdgeOwnership.pairInput (0 : Fin (14 : ℕ)) (0 : Fin (14 : ℕ)));
+        have x9 : ℕ → Bool := fun (x9 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x9 (PEqualNP.EdgeOwnership.pairInput (7 : Fin (14 : ℕ)) (7 : Fin (14 : ℕ)));
+        have x10 : ℕ → Fin (2 : ℕ) → ℕ := PEqualNP.TopForm.opnd x1;
+        have x11 : ℕ → ℕ → Prop := PEqualNP.EdgeOwnership.InCone (14 : ℕ) x1;
+        have x12 : ℕ → Prop := fun (x12 : ℕ) => (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x12).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ x7 ((14 : ℕ) + x12) = Bool.true ∧ x8 ((14 : ℕ) + x12) = Bool.false ∧ x9 ((14 : ℕ) + x12) = Bool.false;
+        ∀ (x14 x15 : ℕ), x14 < x15 → ¬x11 x14 x15 → ¬x11 x15 x14 → x11 x14 (x1.size - (1 : ℕ)) → x11 x15 (x1.size - (1 : ℕ)) → x12 x14 → x12 x15 → (∀ (x23 : Fin (2 : ℕ)), x8 (x10 x14 x23) = Bool.false) → (∀ (x24 : Fin (2 : ℕ)), x9 (x10 x15 x24) = Bool.false) → (∃ (x25 : ℕ), x12 x25 ∧ x9 (x10 x25 (0 : Fin (2 : ℕ))) = Bool.true ∧ (x8 (x10 x25 (1 : Fin (2 : ℕ))) = Bool.true ∨ x9 (x10 x25 (1 : Fin (2 : ℕ))) = Bool.true) ∧ x11 x25 x14 ∧ x11 x25 x15 ∧ ((∀ (x26 : Fin (2 : ℕ)), x9 (x10 x14 x26) = Bool.false) ∨ ∀ (x26 : Fin (2 : ℕ)), x8 (x10 x15 x26) = Bool.false)) → False) :
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit),   x1.size ≤ (27 : ℕ) →     x1.output + (1 : ℕ) = (14 : ℕ) + x1.size →       PEqualNP.TopForm.IsAO2 (14 : ℕ) x1 →         (∀ x5 ∈ x1.gates, x5.inputs.Nodup) →           (∀ (x6 : Fin (14 : ℕ) → Bool), x1.eval (List.ofFn x6) = Bool.true ↔ ∃ (x7 : Fin (7 : ℕ)) (x8 : Fin (7 : ℕ)), (x7 = x8 ∨ x7 = x8 + (1 : Fin (7 : ℕ)) ∨ x7 = x8 + (3 : Fin (7 : ℕ))) ∧ x6 (Fin.castAdd (7 : ℕ) x7) = Bool.true ∧ x6 (Fin.natAdd (7 : ℕ) x8) = Bool.true) →             have x7 : ℕ → Bool := fun (x7 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x7 (PEqualNP.EdgeOwnership.pairInput (0 : Fin (14 : ℕ)) (7 : Fin (14 : ℕ)));             have x8 : ℕ → Bool := fun (x8 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x8 (PEqualNP.EdgeOwnership.pairInput (0 : Fin (14 : ℕ)) (0 : Fin (14 : ℕ)));             have x9 : ℕ → Bool := fun (x9 : ℕ) => PEqualNP.CleanedNonEdge.wireVal (14 : ℕ) x1 x9 (PEqualNP.EdgeOwnership.pairInput (7 : Fin (14 : ℕ)) (7 : Fin (14 : ℕ)));             have x10 : ℕ → Fin (2 : ℕ) → ℕ := PEqualNP.TopForm.opnd x1;             have x11 : ℕ → ℕ → Prop := PEqualNP.EdgeOwnership.InCone (14 : ℕ) x1;             have x12 : ℕ → Prop := fun (x12 : ℕ) => (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x12).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ x7 ((14 : ℕ) + x12) = Bool.true ∧ x8 ((14 : ℕ) + x12) = Bool.false ∧ x9 ((14 : ℕ) + x12) = Bool.false;             have x13 : ℕ → Prop := fun (x13 : ℕ) => x12 x13 ∧ ∀ (x14 : Fin (2 : ℕ)), x8 (x10 x13 x14) = Bool.true ∨ x9 (x10 x13 x14) = Bool.true;             ∀ (x14 x15 : ℕ), x14 < x15 → ¬x11 x14 x15 → ¬x11 x15 x14 → x11 x14 (x1.size - (1 : ℕ)) → x11 x15 (x1.size - (1 : ℕ)) → x12 x14 → x12 x15 → (∀ (x23 : Fin (2 : ℕ)), x8 (x10 x14 x23) = Bool.false) → (∀ (x24 : Fin (2 : ℕ)), x9 (x10 x15 x24) = Bool.false) → (∃ (x25 : ℕ), x13 x25 ∧ x11 x25 x14 ∧ x11 x25 x15 ∧ ((∀ (x26 : Fin (2 : ℕ)), x9 (x10 x14 x26) = Bool.false) ∨ ∀ (x26 : Fin (2 : ℕ)), x8 (x10 x15 x26) = Bool.false)) → False) :=
+  fun x1 hSz hOut hAO hNd hEv x14 x15 hLt hN1 hN2 hR1 hR2 hA1 hA2 hZ1 hZ2 hEx =>
+    Exists.elim hEx fun x25 h =>
+      Or.elim (h.1.2 (0 : Fin (2 : ℕ)))
+        (fun h0L => hOp0Left x1 hSz hOut hAO hNd hEv x14 x15 hLt hN1 hN2 hR1 hR2 hA1 hA2 hZ1 hZ2 ⟨x25, h.1.1, h0L, h.1.2 (1 : Fin (2 : ℕ)), h.2⟩)
+        (fun h0R => hOp0Right x1 hSz hOut hAO hNd hEv x14 x15 hLt hN1 hN2 hR1 hR2 hA1 hA2 hZ1 hZ2 ⟨x25, h.1.1, h0R, h.1.2 (1 : Fin (2 : ℕ)), h.2⟩)

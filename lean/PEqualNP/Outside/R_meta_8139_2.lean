@@ -1,0 +1,53 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_8139_2
+    (hOutInput :
+      ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x9 : ℕ),
+        let x2 : ℕ := (26 : ℕ);
+        have x6 : (Fin x2 → Bool) → ℕ → Bool := PEqualNP.BlindGate.wireValue x1 x2;
+        have x10 : Bool → Fin x2 := fun (x10 : Bool) => if x10 = Bool.true then (0 : Fin x2) else (13 : Fin x2);
+        have x11 : Bool → Fin x2 → Bool := fun (x11 : Bool) (x12 : Fin x2) => Decidable.decide (x12 = x10 x11);
+        have x12 : Bool → ℕ → ℕ → Prop := fun (x12 : Bool) (x13 x14 : ℕ) =>
+          x2 ≤ x14 ∧
+            ∃ (x15 : ℕ),
+              have x16 : PEqualNP.CircuitLowerBounds.Gate := PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x14 - x2);
+              x16.inputs.Perm [x13, x15] ∧ (x16.op = PEqualNP.CircuitLowerBounds.GateOp.or ∨ x6 (x11 x12) x15 = Bool.true);
+        (x1.output < x2 ∧
+          x1.size ≤ (64 : ℕ) ∧
+          PEqualNP.TopForm.IsAO2 x2 x1 ∧
+          (∀ x5 ∈ x1.gates, x5.inputs.Nodup) ∧
+          (∀ (x7 : Fin ((13 : ℕ) + (13 : ℕ)) → Bool), x1.eval (List.ofFn x7) = Bool.true ↔ ∃ (x8 : Fin (13 : ℕ)) (x9 : Fin (13 : ℕ)), x8 ∈ PEqualNP.HeptadCover.singerLines3 x9 ∧ x7 (Fin.castAdd (13 : ℕ) x8) = Bool.true ∧ x7 (Fin.natAdd (13 : ℕ) x9) = Bool.true) ∧
+          (0 : ℕ) < PEqualNP.TopForm.andPairs x2 x1 ∧
+          x9 < x1.size ∧
+          (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x9).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧
+          ¬PEqualNP.CircuitMoves.WireBelowOutput x2 x1 (x2 + x9) ∧
+          (∀ (x13 : Bool), ∃ (x14 : ℕ) (x15 : ℕ) (x16 : ℕ), x1.gates[x14]? = Option.some { op := PEqualNP.CircuitLowerBounds.GateOp.and, inputs := [x15, x16] : PEqualNP.CircuitLowerBounds.Gate } ∧ (∀ x17 ∈ [x15, x16], x6 (x11 x13) x17 = Bool.false ∧ Relation.ReflTransGen (x12 x13) (↑(x10 !x13)) x17) ∧ Relation.ReflTransGen (fun (x17 x18 : ℕ) => x2 ≤ x18 ∧ x17 ∈ (PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x18 - x2)).inputs ∧ x6 (fun (x19 : Fin x2) => x11 Bool.true x19 || x11 Bool.false x19) x18 = Bool.true) (x2 + x14) x1.output)) →
+        False)
+    (hOutGate :
+      ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x9 : ℕ),
+        let x2 : ℕ := (26 : ℕ);
+        have x6 : (Fin x2 → Bool) → ℕ → Bool := PEqualNP.BlindGate.wireValue x1 x2;
+        have x10 : Bool → Fin x2 := fun (x10 : Bool) => if x10 = Bool.true then (0 : Fin x2) else (13 : Fin x2);
+        have x11 : Bool → Fin x2 → Bool := fun (x11 : Bool) (x12 : Fin x2) => Decidable.decide (x12 = x10 x11);
+        have x12 : Bool → ℕ → ℕ → Prop := fun (x12 : Bool) (x13 x14 : ℕ) =>
+          x2 ≤ x14 ∧
+            ∃ (x15 : ℕ),
+              have x16 : PEqualNP.CircuitLowerBounds.Gate := PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x14 - x2);
+              x16.inputs.Perm [x13, x15] ∧ (x16.op = PEqualNP.CircuitLowerBounds.GateOp.or ∨ x6 (x11 x12) x15 = Bool.true);
+        (x2 ≤ x1.output ∧
+          x1.size ≤ (64 : ℕ) ∧
+          PEqualNP.TopForm.IsAO2 x2 x1 ∧
+          (∀ x5 ∈ x1.gates, x5.inputs.Nodup) ∧
+          (∀ (x7 : Fin ((13 : ℕ) + (13 : ℕ)) → Bool), x1.eval (List.ofFn x7) = Bool.true ↔ ∃ (x8 : Fin (13 : ℕ)) (x9 : Fin (13 : ℕ)), x8 ∈ PEqualNP.HeptadCover.singerLines3 x9 ∧ x7 (Fin.castAdd (13 : ℕ) x8) = Bool.true ∧ x7 (Fin.natAdd (13 : ℕ) x9) = Bool.true) ∧
+          (0 : ℕ) < PEqualNP.TopForm.andPairs x2 x1 ∧
+          x9 < x1.size ∧
+          (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x9).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧
+          ¬PEqualNP.CircuitMoves.WireBelowOutput x2 x1 (x2 + x9) ∧
+          (∀ (x13 : Bool), ∃ (x14 : ℕ) (x15 : ℕ) (x16 : ℕ), x1.gates[x14]? = Option.some { op := PEqualNP.CircuitLowerBounds.GateOp.and, inputs := [x15, x16] : PEqualNP.CircuitLowerBounds.Gate } ∧ (∀ x17 ∈ [x15, x16], x6 (x11 x13) x17 = Bool.false ∧ Relation.ReflTransGen (x12 x13) (↑(x10 !x13)) x17) ∧ Relation.ReflTransGen (fun (x17 x18 : ℕ) => x2 ≤ x18 ∧ x17 ∈ (PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x18 - x2)).inputs ∧ x6 (fun (x19 : Fin x2) => x11 Bool.true x19 || x11 Bool.false x19) x18 = Bool.true) (x2 + x14) x1.output)) →
+        False) :
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit),   let x2 : ℕ := (26 : ℕ);   x1.size ≤ (64 : ℕ) →     PEqualNP.TopForm.IsAO2 x2 x1 →       (∀ x5 ∈ x1.gates, x5.inputs.Nodup) →         have x6 : (Fin x2 → Bool) → ℕ → Bool := PEqualNP.BlindGate.wireValue x1 x2;         (∀ (x7 : Fin ((13 : ℕ) + (13 : ℕ)) → Bool), x1.eval (List.ofFn x7) = Bool.true ↔ ∃ (x8 : Fin (13 : ℕ)) (x9 : Fin (13 : ℕ)), x8 ∈ PEqualNP.HeptadCover.singerLines3 x9 ∧ x7 (Fin.castAdd (13 : ℕ) x8) = Bool.true ∧ x7 (Fin.natAdd (13 : ℕ) x9) = Bool.true) →           (0 : ℕ) < PEqualNP.TopForm.andPairs x2 x1 →             (∃ x9 < x1.size, (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x9).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ ¬PEqualNP.CircuitMoves.WireBelowOutput x2 x1 (x2 + x9)) →               have x10 : Bool → Fin x2 := fun (x10 : Bool) => if x10 = Bool.true then (0 : Fin x2) else (13 : Fin x2);               have x11 : Bool → Fin x2 → Bool := fun (x11 : Bool) (x12 : Fin x2) => Decidable.decide (x12 = x10 x11);               have x12 : Bool → ℕ → ℕ → Prop := fun (x12 : Bool) (x13 x14 : ℕ) =>                 x2 ≤ x14 ∧                   ∃ (x15 : ℕ),                     have x16 : PEqualNP.CircuitLowerBounds.Gate := PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x14 - x2);                     x16.inputs.Perm [x13, x15] ∧ (x16.op = PEqualNP.CircuitLowerBounds.GateOp.or ∨ x6 (x11 x12) x15 = Bool.true);               (∀ (x13 : Bool), ∃ (x14 : ℕ) (x15 : ℕ) (x16 : ℕ), x1.gates[x14]? = Option.some { op := PEqualNP.CircuitLowerBounds.GateOp.and, inputs := [x15, x16] : PEqualNP.CircuitLowerBounds.Gate } ∧ (∀ x17 ∈ [x15, x16], x6 (x11 x13) x17 = Bool.false ∧ Relation.ReflTransGen (x12 x13) (↑(x10 !x13)) x17) ∧ Relation.ReflTransGen (fun (x17 x18 : ℕ) => x2 ≤ x18 ∧ x17 ∈ (PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x18 - x2)).inputs ∧ x6 (fun (x19 : Fin x2) => x11 Bool.true x19 || x11 Bool.false x19) x18 = Bool.true) (x2 + x14) x1.output) → False) :=
+  fun x1 hSz hAO hNodup hComp hAP hDead hPaths =>
+    Exists.elim hDead fun x9 hx9 =>
+      Or.elim (Nat.lt_or_ge x1.output (26 : ℕ))
+        (fun hLt => hOutInput x1 x9 ⟨hLt, hSz, hAO, hNodup, hComp, hAP, hx9.1, hx9.2.1, hx9.2.2, hPaths⟩)
+        (fun hGe => hOutGate x1 x9 ⟨hGe, hSz, hAO, hNodup, hComp, hAP, hx9.1, hx9.2.1, hx9.2.2, hPaths⟩)

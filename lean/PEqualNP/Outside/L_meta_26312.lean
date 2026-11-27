@@ -1,0 +1,842 @@
+import Mathlib.Data.Fintype.Pi
+import Mathlib.Data.List.OfFn
+import Mathlib.Data.List.Sublists
+import Mathlib.Data.Nat.Bitwise
+import Mathlib.Tactic.ByContra
+import Mathlib.Tactic.GRewrite
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.SplitIfs
+import Mathlib.Tactic.Tauto
+import PEqualNP.Defs
+
+namespace PEqualNP.Outside.L_meta_26312
+
+open PEqualNP.MetaComplexity PEqualNP.CircuitLowerBounds
+
+def truthMask : Nat := 2 ^ 16 - 1
+
+def negD (d w : Nat) : Nat := (w ^^^ truthMask) &&& d
+def andD (d a b : Nat) : Nat := (a &&& b) &&& d
+def orD (d a b : Nat) : Nat := (a ||| b) &&& d
+def binD (d : Nat) (isOr : Bool) (a b : Nat) : Nat := if isOr then orD d a b else andD d a b
+
+def kept {α : Type} (b : Bool) (x : α) (xs : List α) : List α :=
+  if b then x :: xs else xs
+
+def RunD (d y : Nat) (t : ℕ) (ws : List Nat) : Prop :=
+  ∀ P : ℕ → List Nat → Prop, P 0 [y] →
+    (∀ {s xs zs}, List.Perm xs zs → P s xs → P s zs) →
+    (∀ {s a r} (save : Bool),
+      negD d a ≠ 0 → negD d a ≠ d → negD d a ∉ (a :: r) →
+      P s (negD d a :: kept save a r) → P (s + 1) (a :: r)) →
+    (∀ {s a b r} (c ka kb : Bool),
+      (if c then andD d a b else orD d a b) ≠ 0 →
+      (if c then andD d a b else orD d a b) ≠ d →
+      (if c then andD d a b else orD d a b) ∉ (a :: b :: r) →
+      P s ((if c then andD d a b else orD d a b) :: kept ka a (kept kb b r)) →
+      P (s + 1) (a :: b :: r)) → P t ws
+
+section
+variable {d y : Nat}
+
+theorem Run.done : RunD d y 0 [y] := fun _ dn _ _ _ => dn
+theorem Run.perm {s xs zs} (p : List.Perm xs zs) (h : RunD d y s xs) :
+    RunD d y s zs := fun P dn q u b => q p (h P dn q u b)
+theorem Run.one {s a r} (save : Bool)
+    (h0 : negD d a ≠ 0) (hd : negD d a ≠ d) (hm : negD d a ∉ (a :: r))
+    (h : RunD d y s (negD d a :: kept save a r)) :
+    RunD d y (s + 1) (a :: r) := fun P dn q u b => u save h0 hd hm (h P dn q u b)
+theorem Run.two {s a b r} (c ka kb : Bool)
+    (h0 : (if c then andD d a b else orD d a b) ≠ 0)
+    (hd : (if c then andD d a b else orD d a b) ≠ d)
+    (hm : (if c then andD d a b else orD d a b) ∉ (a :: b :: r))
+    (h : RunD d y s ((if c then andD d a b else orD d a b) :: kept ka a (kept kb b r))) :
+    RunD d y (s + 1) (a :: b :: r) := fun P dn q u v => v c ka kb h0 hd hm (h P dn q u v)
+
+theorem Run.fold {P : ∀ t ws, RunD d y t ws → Prop}
+    (done : P 0 [y] Run.done)
+    (perm : ∀ {s xs zs} (hp : List.Perm xs zs) (h : RunD d y s xs),
+      P s xs h → P s zs (Run.perm hp h))
+    (one : ∀ {s a r} (save : Bool)
+      (h0 : negD d a ≠ 0) (hd : negD d a ≠ d) (hm : negD d a ∉ (a :: r))
+      (h : RunD d y s (negD d a :: kept save a r)),
+      P _ _ h → P _ _ (Run.one save h0 hd hm h))
+    (two : ∀ {s a b r} (c ka kb : Bool)
+      (h0 : (if c then andD d a b else orD d a b) ≠ 0)
+      (hd : (if c then andD d a b else orD d a b) ≠ d)
+      (hm : (if c then andD d a b else orD d a b) ∉ (a :: b :: r))
+      (h : RunD d y s ((if c then andD d a b else orD d a b) :: kept ka a (kept kb b r))),
+      P _ _ h → P _ _ (Run.two c ka kb h0 hd hm h))
+    {t ws} (h : RunD d y t ws) : P t ws h := by
+  have hex := h (fun s xs => ∃ h' : RunD d y s xs, P s xs h')
+    ⟨Run.done, done⟩
+    (fun hp ⟨h', ih⟩ => ⟨Run.perm hp h', perm hp h' ih⟩)
+    (fun k h0 hd hm ⟨h', ih⟩ => ⟨Run.one k h0 hd hm h', one k h0 hd hm h' ih⟩)
+    (fun c a b h0 hd hm ⟨h', ih⟩ => ⟨Run.two c a b h0 hd hm h', two c a b h0 hd hm h' ih⟩)
+  exact hex.elim fun _ hp => hp
+end
+
+theorem mem_kept {α : Type} (b : Bool) (x a : α) (xs : List α) :
+    a ∈ kept b x xs ↔ (b = true ∧ a = x) ∨ a ∈ xs := by cases b <;> simp [kept]
+
+theorem nodup_kept {α : Type} (b : Bool) (x : α) (xs : List α) (h : xs.Nodup) (hx : x ∉ xs) :
+    (kept b x xs).Nodup := by
+  cases b
+  · simpa [kept] using h
+  · simpa [kept] using And.intro hx h
+
+theorem keep_perm {α : Type} {xs ys : List α} (p : xs.Perm ys) (b : Bool) (a : α) :
+    (kept b a xs).Perm (kept b a ys) := by cases b <;> simpa [kept] using p
+
+theorem run_len {d y s xs} (h : RunD d y s xs) :
+    xs.length ≤ s + 1 := by
+  induction h using Run.fold with
+  | done => simp
+  | perm hp _ ih => rwa [← hp.length_eq]
+  | one save _ _ _ _ ih => cases save <;> simp_all [kept] <;> omega
+  | two conj ka kb _ _ _ _ ih => cases ka <;> cases kb <;> simp_all [kept] <;> omega
+
+theorem zero_done {d y t ws} (h : RunD d y t ws) :
+    t = 0 → ws = [y] := by
+  induction h using Run.fold with
+  | done => simp
+  | perm p _ ih => intro ht; rw [ih ht] at p; exact List.perm_singleton.1 p.symm
+  | one => simp
+  | two => simp
+
+def IsConst (d w : Nat) : Prop := (w &&& d) = 0 ∨ (w &&& d) = d
+def Avail (d : Nat) (bank : List Nat) (w : Nat) : Prop :=
+  IsConst d w ∨ ∃ v ∈ bank, (v &&& d) = (w &&& d)
+
+def NatReach (d : Nat) (roots : List Nat) : Nat → List Nat → Prop
+  | 0, bank => bank = roots
+  | p + 1, bank =>
+    (∃ b a, bank = negD d a :: b ∧ NatReach d roots p b ∧ Avail d b a) ∨
+    (∃ b a c op, bank = binD d op a c :: b ∧ NatReach d roots p b ∧ Avail d b a ∧ Avail d b c)
+
+theorem truthMask_bit (i : Nat) : truthMask.testBit i = decide (i < 16) := by
+  rw [truthMask, Nat.testBit_two_pow_sub_one]
+
+theorem negD_const {d : Nat} (hd : d &&& truthMask = d) {a : Nat} (hc : IsConst d a) :
+    IsConst d (negD d a) := by
+  rcases hc with h0 | h1
+  · right; apply Nat.eq_of_testBit_eq; intro i
+    have h0i := congrArg (fun v => v.testBit i) h0
+    have hdi := congrArg (fun v => v.testBit i) hd
+    simp only [negD, Nat.testBit_and, Nat.testBit_xor, Nat.zero_testBit] at *
+    cases h1' : d.testBit i <;> cases h2' : a.testBit i <;> simp_all
+  · left; apply Nat.eq_of_testBit_eq; intro i
+    have h1i := congrArg (fun v => v.testBit i) h1
+    have hdi := congrArg (fun v => v.testBit i) hd
+    simp only [negD, Nat.testBit_and, Nat.testBit_xor, Nat.zero_testBit] at *
+    cases h1' : d.testBit i <;> cases h2' : a.testBit i <;> simp_all
+
+theorem binD_const_left {d : Nat} {a b : Nat} (op : Bool) (hc : IsConst d a) :
+    (binD d op a b &&& d = 0) ∨ (binD d op a b &&& d = d) ∨ (binD d op a b &&& d = b &&& d) := by
+  rcases hc with h0 | h1
+  · cases op
+    · left; apply Nat.eq_of_testBit_eq; intro i
+      have h0i := congrArg (fun v => v.testBit i) h0
+      simp only [binD, andD, Nat.testBit_and, Nat.zero_testBit, ite_false] at *
+      cases h1' : d.testBit i <;> cases h2' : a.testBit i <;> simp_all
+    · right; right; apply Nat.eq_of_testBit_eq; intro i
+      have h0i := congrArg (fun v => v.testBit i) h0
+      simp only [binD, orD, Nat.testBit_and, Nat.testBit_or, Nat.zero_testBit, ite_true] at *
+      cases h1' : d.testBit i <;> cases h2' : a.testBit i <;> simp_all
+  · cases op
+    · right; right; apply Nat.eq_of_testBit_eq; intro i
+      have h1i := congrArg (fun v => v.testBit i) h1
+      simp only [binD, andD, Nat.testBit_and, ite_false] at *
+      cases h1' : d.testBit i <;> cases h2' : a.testBit i <;> simp_all
+    · right; left; apply Nat.eq_of_testBit_eq; intro i
+      have h1i := congrArg (fun v => v.testBit i) h1
+      simp only [binD, orD, Nat.testBit_and, Nat.testBit_or, ite_true] at *
+      cases h1' : d.testBit i <;> cases h2' : a.testBit i <;> simp_all
+
+theorem binD_comm (d : Nat) (op : Bool) (a b : Nat) : binD d op a b = binD d op b a := by
+  cases op <;> simp [binD, andD, orD, Nat.and_comm, Nat.or_comm]
+
+theorem avail_cons {d : Nat} {bank : List Nat} (z w : Nat) (h : Avail d bank w) :
+    Avail d (z :: bank) w := by
+  rcases h with hc | ⟨v, hv, he⟩
+  · exact Or.inl hc
+  · exact Or.inr ⟨v, List.mem_cons_of_mem _ hv, he⟩
+
+theorem avail_of_eq {d : Nat} {bank : List Nat} {v w : Nat}
+    (he : v &&& d = w &&& d) (h : Avail d bank v) : Avail d bank w := by
+  rcases h with (h0 | h1) | ⟨u, hu, hue⟩
+  · exact Or.inl (Or.inl (he.symm.trans h0))
+  · exact Or.inl (Or.inr (he.symm.trans h1))
+  · exact Or.inr ⟨u, hu, hue.trans he⟩
+
+theorem negD_mask (d a : Nat) : negD d (a &&& d) = negD d a := by
+  apply Nat.eq_of_testBit_eq; intro i
+  simp only [negD, Nat.testBit_and, Nat.testBit_xor]
+  cases d.testBit i <;> simp
+
+theorem andD_mask (d a b : Nat) : andD d (a &&& d) (b &&& d) = andD d a b := by
+  apply Nat.eq_of_testBit_eq; intro i
+  simp only [andD, Nat.testBit_and]
+  cases d.testBit i <;> simp
+
+theorem orD_mask (d a b : Nat) : orD d (a &&& d) (b &&& d) = orD d a b := by
+  apply Nat.eq_of_testBit_eq; intro i
+  simp only [orD, Nat.testBit_and, Nat.testBit_or]
+  cases d.testBit i <;> simp
+
+theorem pull_one {d Y k ws} (hd : d &&& truthMask = d) (hnd : ws.Nodup)
+    (hprop : ∀ w ∈ ws, w ≠ 0 ∧ w ≠ d) (h : RunD d Y k ws)
+    {b : List Nat} {a : Nat} (ha : Avail d b a) (hsub : ∀ w ∈ ws, w ∈ negD d a :: b.map (· &&& d)) :
+    ∃ k' ws', k' ≤ k + 1 ∧ ws'.Nodup ∧ (∀ w ∈ ws', w ≠ 0 ∧ w ≠ d) ∧
+      (∀ w ∈ ws', w ∈ b.map (· &&& d)) ∧ RunD d Y k' ws' := by
+  set z := negD d a
+  by_cases hzm : z ∈ ws
+  · by_cases hzb : z ∈ b.map (· &&& d)
+    · exact ⟨k, ws, by omega, hnd, hprop, fun w hw => by
+        rcases List.mem_cons.1 (hsub w hw) with rfl | hm
+        · exact hzb
+        · exact hm, h⟩
+    · have hzp := hprop z hzm
+      have ha_nc : ¬ IsConst d a := by
+        intro hc
+        rcases negD_const hd hc with h0 | h1
+        · exact hzp.1 (by simpa [z, negD, Nat.and_assoc, Nat.and_self] using h0)
+        · exact hzp.2 (by simpa [z, negD, Nat.and_assoc, Nat.and_self] using h1)
+      obtain ⟨v, hv, hve⟩ := ha.resolve_left ha_nc
+      set a' := a &&& d
+      have ha'_mem : a' ∈ b.map (· &&& d) := List.mem_map.2 ⟨v, hv, hve⟩
+      have ha'_prop : a' ≠ 0 ∧ a' ≠ d := ⟨fun e => ha_nc (Or.inl e), fun e => ha_nc (Or.inr e)⟩
+      set rest := ws.erase z
+      have hrest_nd : rest.Nodup := hnd.erase z
+      have hrest_sub : ∀ w ∈ rest, w ∈ b.map (· &&& d) := by
+        intro w hw
+        have ⟨hne, hm⟩ := hnd.mem_erase_iff.1 hw
+        rcases List.mem_cons.1 (hsub w hm) with rfl | hmb
+        · exact absurd rfl hne
+        · exact hmb
+      have hrest_prop : ∀ w ∈ rest, w ≠ 0 ∧ w ≠ d := fun w hw => hprop w (List.mem_of_mem_erase hw)
+      have hp1 : ws.Perm (z :: rest) := List.perm_cons_erase hzm
+      have ez : negD d a' = z := negD_mask d a
+      have h1 : RunD d Y k (negD d a' :: rest) := by
+        rw [ez]; exact Run.perm hp1 h
+      have hne0 : negD d a' ≠ 0 := ez.symm ▸ hzp.1
+      have hned : negD d a' ≠ d := ez.symm ▸ hzp.2
+      by_cases ham : a' ∈ rest
+      · have hp2 : rest.Perm (a' :: rest.erase a') := List.perm_cons_erase ham
+        have h2 : RunD d Y k (negD d a' :: kept true a' (rest.erase a')) :=
+          Run.perm (hp2.cons _) h1
+        have hnm : negD d a' ∉ (a' :: rest.erase a') := by
+          rw [ez, List.mem_cons]; rintro (e | hm)
+          · exact hzb (e ▸ ha'_mem)
+          · exact hnd.not_mem_erase (List.mem_of_mem_erase hm)
+        refine ⟨k + 1, rest, le_rfl, hrest_nd, hrest_prop, hrest_sub, ?_⟩
+        exact Run.perm hp2.symm (Run.one true hne0 hned hnm h2)
+      · have h2 : RunD d Y k (negD d a' :: kept false a' rest) := h1
+        have hnm : negD d a' ∉ (a' :: rest) := by
+          rw [ez, List.mem_cons]; rintro (e | hm)
+          · exact hzb (e ▸ ha'_mem)
+          · exact hnd.not_mem_erase hm
+        refine ⟨k + 1, a' :: rest, le_rfl, List.nodup_cons.2 ⟨ham, hrest_nd⟩, ?_, ?_, Run.one false hne0 hned hnm h2⟩
+        · intro w hw; rcases List.mem_cons.1 hw with rfl | hw
+          · exact ha'_prop
+          · exact hrest_prop w hw
+        · intro w hw; rcases List.mem_cons.1 hw with rfl | hw
+          · exact ha'_mem
+          · exact hrest_sub w hw
+  · exact ⟨k, ws, by omega, hnd, hprop, fun w hw => by
+      rcases List.mem_cons.1 (hsub w hw) with rfl | hm
+      · exact absurd hw hzm
+      · exact hm, h⟩
+
+theorem pull_two {d Y k ws} (hnd : ws.Nodup)
+    (hprop : ∀ w ∈ ws, w ≠ 0 ∧ w ≠ d) (h : RunD d Y k ws)
+    {b : List Nat} {a c : Nat} (op : Bool) (ha : Avail d b a) (hc : Avail d b c)
+    (hsub : ∀ w ∈ ws, w ∈ binD d op a c :: b.map (· &&& d)) :
+    ∃ k' ws', k' ≤ k + 1 ∧ ws'.Nodup ∧ (∀ w ∈ ws', w ≠ 0 ∧ w ≠ d) ∧
+      (∀ w ∈ ws', w ∈ b.map (· &&& d)) ∧ RunD d Y k' ws' := by
+  set z := binD d op a c
+  have hz_mask : z &&& d = z := by cases op <;> simp [z, binD, andD, orD, Nat.and_assoc, Nat.and_self]
+  by_cases hzm : z ∈ ws
+  · by_cases hzb : z ∈ b.map (· &&& d)
+    · exact ⟨k, ws, by omega, hnd, hprop, fun w hw => by
+        rcases List.mem_cons.1 (hsub w hw) with rfl | hm
+        · exact hzb
+        · exact hm, h⟩
+    · have hzp := hprop z hzm
+      have ha_nc : ¬ IsConst d a := by
+        intro hca
+        rcases binD_const_left op hca with h0 | h1 | he
+        · exact hzp.1 (hz_mask.symm.trans h0)
+        · exact hzp.2 (hz_mask.symm.trans h1)
+        · rcases hc with hcc | ⟨v, hv, hve⟩
+          · rcases hcc with h0 | h1
+            · exact hzp.1 (hz_mask.symm.trans (he.trans h0))
+            · exact hzp.2 (hz_mask.symm.trans (he.trans h1))
+          · exact hzb (List.mem_map.2 ⟨v, hv, hve.trans (he.symm.trans hz_mask)⟩)
+      have hc_nc : ¬ IsConst d c := by
+        intro hcc
+        have hz' : z = binD d op c a := binD_comm d op a c
+        rcases binD_const_left op hcc with h0 | h1 | he
+        · exact hzp.1 (hz_mask.symm.trans (by rw [hz']; exact h0))
+        · exact hzp.2 (hz_mask.symm.trans (by rw [hz']; exact h1))
+        · rcases ha with hca | ⟨v, hv, hve⟩
+          · exact absurd hca ha_nc
+          · have he' : z &&& d = a &&& d := hz'.symm ▸ he
+            exact hzb (List.mem_map.2 ⟨v, hv, hve.trans (he'.symm.trans hz_mask)⟩)
+      obtain ⟨va, hva, hvae⟩ := ha.resolve_left ha_nc
+      obtain ⟨vc, hvc, hvce⟩ := hc.resolve_left hc_nc
+      set a' := a &&& d
+      set c' := c &&& d
+      have ha'_mem : a' ∈ b.map (· &&& d) := List.mem_map.2 ⟨va, hva, hvae⟩
+      have hc'_mem : c' ∈ b.map (· &&& d) := List.mem_map.2 ⟨vc, hvc, hvce⟩
+      have ha'_prop : a' ≠ 0 ∧ a' ≠ d := ⟨fun e => ha_nc (Or.inl e), fun e => ha_nc (Or.inr e)⟩
+      have hc'_prop : c' ≠ 0 ∧ c' ≠ d := ⟨fun e => hc_nc (Or.inl e), fun e => hc_nc (Or.inr e)⟩
+      have hne_ac : a' ≠ c' := by
+        intro heq
+        dsimp only [a', c'] at heq
+        have hz_eq : z = a' := by
+          cases op
+          · simp only [z, binD, Bool.false_eq_true, ite_false]; rw [← andD_mask, ← heq]; simp [andD, a', Nat.and_assoc, Nat.and_self]
+          · simp only [z, binD, ite_true]; rw [← orD_mask, ← heq]; simp [orD, a', Nat.and_assoc, Nat.and_self]
+        exact hzb (hz_eq ▸ ha'_mem)
+      set rest := ws.erase z
+      have hrest_nd : rest.Nodup := hnd.erase z
+      have hrest_sub : ∀ w ∈ rest, w ∈ b.map (· &&& d) := by
+        intro w hw
+        have ⟨hne, hm⟩ := hnd.mem_erase_iff.1 hw
+        rcases List.mem_cons.1 (hsub w hm) with rfl | hmb
+        · exact absurd rfl hne
+        · exact hmb
+      have hrest_prop : ∀ w ∈ rest, w ≠ 0 ∧ w ≠ d := fun w hw => hprop w (List.mem_of_mem_erase hw)
+      have hp1 : ws.Perm (z :: rest) := List.perm_cons_erase hzm
+      have ez : (if !op then andD d a' c' else orD d a' c') = z := by
+        cases op
+        · simp [z, binD, a', c', andD_mask]
+        · simp [z, binD, a', c', orD_mask]
+      have h1 : RunD d Y k ((if !op then andD d a' c' else orD d a' c') :: rest) := by
+        rw [ez]; exact Run.perm hp1 h
+      set ka := decide (a' ∈ rest)
+      set kb := decide (c' ∈ rest)
+      set tail := (rest.erase a').erase c'
+      have htail_nd : tail.Nodup := (hrest_nd.erase a').erase c'
+      have hna_tail : a' ∉ tail := by
+        intro hm; exact hrest_nd.not_mem_erase (List.mem_of_mem_erase hm)
+      have hnc_tail : c' ∉ tail := (hrest_nd.erase a').not_mem_erase
+      have hna_mid : a' ∉ kept kb c' tail := by
+        rw [mem_kept]; rintro (⟨_, h⟩ | h)
+        · exact hne_ac h
+        · exact hna_tail h
+      have hrest_perm : rest.Perm (kept ka a' (kept kb c' tail)) := by
+        refine (List.perm_ext_iff_of_nodup hrest_nd (nodup_kept ka a' _ (nodup_kept kb c' _ htail_nd hnc_tail) hna_mid)).2 ?_
+        intro x
+        rw [mem_kept, mem_kept, (hrest_nd.erase a').mem_erase_iff, hrest_nd.mem_erase_iff]
+        by_cases hxa : x = a' <;> by_cases hxc : x = c' <;> by_cases hxr : x ∈ rest <;>
+          simp_all [ka, kb]
+      have h2 := Run.perm (hrest_perm.cons _) h1
+      have hne0 : (if !op then andD d a' c' else orD d a' c') ≠ 0 := ez.symm ▸ hzp.1
+      have hned : (if !op then andD d a' c' else orD d a' c') ≠ d := ez.symm ▸ hzp.2
+      have hnm : (if !op then andD d a' c' else orD d a' c') ∉ (a' :: c' :: tail) := by
+        rw [ez, List.mem_cons, List.mem_cons]; rintro (e | e | hm)
+        · exact hzb (e ▸ ha'_mem)
+        · exact hzb (e ▸ hc'_mem)
+        · exact hnd.not_mem_erase (List.mem_of_mem_erase (List.mem_of_mem_erase hm))
+      have h3 : RunD d Y (k + 1) (a' :: c' :: tail) := Run.two (!op) ka kb hne0 hned hnm h2
+      have hnd3 : (a' :: c' :: tail).Nodup :=
+        List.nodup_cons.2 ⟨by simp [hne_ac, hna_tail], List.nodup_cons.2 ⟨hnc_tail, htail_nd⟩⟩
+      refine ⟨k + 1, a' :: c' :: tail, le_rfl, hnd3, ?_, ?_, h3⟩
+      · intro w hw; rcases List.mem_cons.1 hw with rfl | hw
+        · exact ha'_prop
+        · rcases List.mem_cons.1 hw with rfl | hw
+          · exact hc'_prop
+          · exact hrest_prop w (List.mem_of_mem_erase (List.mem_of_mem_erase hw))
+      · intro w hw; rcases List.mem_cons.1 hw with rfl | hw
+        · exact ha'_mem
+        · rcases List.mem_cons.1 hw with rfl | hw
+          · exact hc'_mem
+          · exact hrest_sub w (List.mem_of_mem_erase (List.mem_of_mem_erase hw))
+  · exact ⟨k, ws, by omega, hnd, hprop, fun w hw => by
+      rcases List.mem_cons.1 (hsub w hw) with rfl | hm
+      · exact absurd hw hzm
+      · exact hm, h⟩
+
+theorem reach_to_run_aux {d : Nat} {roots : List Nat} {p bank} (hd : d &&& truthMask = d)
+    (hr : NatReach d roots p bank) :
+    ∀ {Y k ws}, ws.Nodup → (∀ w ∈ ws, w ≠ 0 ∧ w ≠ d) →
+      (∀ w ∈ ws, w ∈ bank.map (· &&& d)) → RunD d Y k ws →
+      ∃ k' ws', k' ≤ p + k ∧ ws'.Nodup ∧ (∀ w ∈ ws', w ≠ 0 ∧ w ≠ d) ∧
+        (∀ w ∈ ws', w ∈ roots.map (· &&& d)) ∧ RunD d Y k' ws' := by
+  induction p generalizing bank with
+  | zero =>
+    intro Y k ws hnd hprop hsub hrun
+    subst hr
+    exact ⟨k, ws, by omega, hnd, hprop, hsub, hrun⟩
+  | succ p ih =>
+    intro Y k ws hnd hprop hsub hrun
+    rcases hr with ⟨b, a, rfl, hrb, ha⟩ | ⟨b, a, c, op, rfl, hrb, ha, hc⟩
+    · have hsub' : ∀ w ∈ ws, w ∈ negD d a :: b.map (· &&& d) := by
+        intro w hw; have := hsub w hw; simp only [List.map_cons, negD, Nat.and_assoc, Nat.and_self] at this; exact this
+      obtain ⟨k1, ws1, hk1, hnd1, hprop1, hsub1, hrun1⟩ := pull_one hd hnd hprop hrun ha hsub'
+      obtain ⟨k2, ws2, hk2, hnd2, hprop2, hsub2, hrun2⟩ := ih hrb hnd1 hprop1 hsub1 hrun1
+      exact ⟨k2, ws2, by omega, hnd2, hprop2, hsub2, hrun2⟩
+    · have hsub' : ∀ w ∈ ws, w ∈ binD d op a c :: b.map (· &&& d) := by
+        intro w hw; have := hsub w hw
+        have ez : binD d op a c &&& d = binD d op a c := by cases op <;> simp [binD, andD, orD, Nat.and_assoc, Nat.and_self]
+        simpa [List.map_cons, ez] using this
+      obtain ⟨k1, ws1, hk1, hnd1, hprop1, hsub1, hrun1⟩ := pull_two hnd hprop hrun op ha hc hsub'
+      obtain ⟨k2, ws2, hk2, hnd2, hprop2, hsub2, hrun2⟩ := ih hrb hnd1 hprop1 hsub1 hrun1
+      exact ⟨k2, ws2, by omega, hnd2, hprop2, hsub2, hrun2⟩
+
+theorem reach_to_run {d : Nat} {roots : List Nat} {T : Nat} {p bank} (hd : d &&& truthMask = d)
+    (hnc : ¬ IsConst d T) (hr : NatReach d roots p bank) (ha : Avail d bank T) :
+    ∃ s ws, s ≤ p ∧ ws.Nodup ∧ (∀ w ∈ ws, w ∈ roots.map (· &&& d)) ∧ RunD d (T &&& d) s ws := by
+  obtain ⟨v, hv, hve⟩ := ha.resolve_left hnc
+  have hprop : ∀ w ∈ [T &&& d], w ≠ 0 ∧ w ≠ d := by
+    intro w hw; rw [List.mem_singleton.1 hw]
+    exact ⟨fun e => hnc (Or.inl e), fun e => hnc (Or.inr e)⟩
+  have hsub : ∀ w ∈ [T &&& d], w ∈ bank.map (· &&& d) := by
+    intro w hw; rw [List.mem_singleton.1 hw]; exact List.mem_map.2 ⟨v, hv, hve⟩
+  obtain ⟨s, ws, hs, hnd, _, hsub', hrun⟩ := reach_to_run_aux hd hr (List.nodup_singleton _) hprop hsub Run.done
+  exact ⟨s, ws, by omega, hnd, hsub', hrun⟩
+
+theorem runD_bits {d y s ws} (hd : d &&& truthMask = d) (h : RunD d y s ws) (i j : Nat)
+    (hi : d.testBit i = true) (hj : d.testBit j = true)
+    (hw : ∀ w ∈ ws, w.testBit i = w.testBit j) : y.testBit i = y.testBit j := by
+  have hmi : truthMask.testBit i = true := by
+    have := congrArg (fun v => v.testBit i) hd; simp [Nat.testBit_and, hi] at this; exact this
+  have hmj : truthMask.testBit j = true := by
+    have := congrArg (fun v => v.testBit j) hd; simp [Nat.testBit_and, hj] at this; exact this
+  induction h using Run.fold with
+  | done => exact hw _ (by simp)
+  | perm hp _ ih => exact ih (fun w h => hw w (hp.mem_iff.1 h))
+  | one save _ _ _ _ ih =>
+    apply ih; have ha := hw _ List.mem_cons_self
+    intro w hm; cases save <;> simp only [kept, Bool.false_eq_true, ite_false, ite_true, List.mem_cons] at hm
+    · rcases hm with rfl | hr
+      · simp [negD, ha, hi, hj, hmi, hmj]
+      · exact hw _ (by simp [hr])
+    · rcases hm with rfl | rfl | hr
+      · simp [negD, ha, hi, hj, hmi, hmj]
+      · exact ha
+      · exact hw _ (by simp [hr])
+  | two conj ka kb _ _ _ _ ih =>
+    apply ih; have ha := hw _ List.mem_cons_self; have hb := hw _ (List.mem_cons_of_mem _ List.mem_cons_self)
+    intro w hm; cases conj <;> cases ka <;> cases kb <;>
+      simp only [kept, Bool.false_eq_true, ite_false, ite_true, List.mem_cons] at hm <;>
+      rcases hm with rfl | hr <;>
+      first | simp [andD, orD, ha, hb, hi, hj] | exact hw _ (by simp only [List.mem_cons]; tauto)
+
+theorem runD_bits_le {d y s ws} (h : RunD d y s ws) (hl : ws.length = s + 1) (i j : Nat)
+    (hi : d.testBit i = true) (hj : d.testBit j = true)
+    (hw : ∀ w ∈ ws, w.testBit i ≤ w.testBit j) : y.testBit i ≤ y.testBit j := by
+  induction h using Run.fold with
+  | done => exact hw _ (by simp)
+  | perm hp _ ih => exact ih (hp.length_eq.trans hl) (fun w h => hw w (hp.mem_iff.1 h))
+  | one save _ _ _ h _ => have hh := run_len h; cases save <;> simp [kept] at hh hl <;> omega
+  | two conj ka kb _ _ _ h ih =>
+    have hh := run_len h
+    cases ka <;> cases kb <;> simp [kept] at hh hl <;> try omega
+    apply ih (by simp [kept]; omega)
+    have ha := hw _ List.mem_cons_self; have hb := hw _ (List.mem_cons_of_mem _ List.mem_cons_self)
+    intro w hm; simp only [kept, Bool.false_eq_true, ite_false, List.mem_cons] at hm
+    rcases hm with rfl | hr
+    · cases conj <;> simp only [andD, orD, ite_true, Bool.false_eq_true, ite_false, Nat.testBit_and, Nat.testBit_or, hi, hj, Bool.and_true] <;> grind
+    · exact hw _ (by simp [hr])
+
+theorem getD_mem {xs : List Nat} {i : Nat} (hi : i < xs.length) : xs.getD i 0 ∈ xs := by
+  rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some]
+  exact List.getElem_mem hi
+
+def coversP (pairs : List (Nat × Nat)) (s : Nat) (ws : List Nat) : Bool :=
+  if ws.length == s + 1 then
+    pairs.all (fun p => ws.any (fun w => !w.testBit p.1 && w.testBit p.2))
+  else
+    pairs.all (fun p => ws.any (fun w => w.testBit p.1 != w.testBit p.2))
+
+theorem coversP_ok {d T s : Nat} (hd : d &&& truthMask = d)
+    (pairs : List (Nat × Nat))
+    (hpairs : pairs.all (fun p => d.testBit p.1 && d.testBit p.2 && !(T &&& d).testBit p.1 && (T &&& d).testBit p.2) = true)
+    {ws : List Nat} (h : RunD d (T &&& d) s ws) : coversP pairs s ws = true := by
+  unfold coversP
+  by_cases hl : ws.length = s + 1
+  · simp only [hl, beq_self_eq_true, ite_true, List.all_eq_true, List.any_eq_true]
+    intro ⟨u, v⟩ hm
+    have hp := List.all_eq_true.1 hpairs (u, v) hm
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
+    by_contra! hall
+    have hle := runD_bits_le h hl v u hp.1.1.2 hp.1.1.1 (fun w hw => by
+      have hbad := hall w hw
+      cases hu : w.testBit u <;> cases hv : w.testBit v <;> simp_all)
+    rw [hp.1.2, hp.2] at hle; contradiction
+  · simp only [hl, beq_iff_eq, ite_false, List.all_eq_true, List.any_eq_true, bne_iff_ne]
+    intro ⟨u, v⟩ hm
+    have hp := List.all_eq_true.1 hpairs (u, v) hm
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hp
+    by_contra! hall
+    have heq := runD_bits hd h u v hp.1.1.1 hp.1.1.2 hall
+    rw [hp.1.2, hp.2] at heq; contradiction
+
+def nextD (dm : Nat) (slack : Nat) (ws : List Nat) (f : List Nat → Bool) : Bool :=
+  ws.any fun a =>
+    let ra := ws.erase a
+    (slack ≥ 1 &&
+      (let w := negD dm a
+       w != 0 && w != dm && !(ws.contains w) &&
+         (f (w :: ra) || (slack ≥ 2 && f (w :: a :: ra))))) ||
+    ra.any fun b =>
+      a ≤ b && (let r := ra.erase b
+        [false, true].any fun conj =>
+          let w := if conj then andD dm a b else orD dm a b
+          w != 0 && w != dm && !(ws.contains w) &&
+            (f (w :: r) || (slack ≥ 1 && (f (w :: a :: r) || f (w :: b :: r))) ||
+              (slack ≥ 2 && f (w :: a :: b :: r))))
+
+theorem nextD_one {dm y a rest} {save : Bool} {s ws} (p : (a :: rest).Perm ws)
+    (h0 : negD dm a ≠ 0) (hd : negD dm a ≠ dm) (hnm : negD dm a ∉ (a :: rest))
+    (h : RunD dm y s (negD dm a :: kept save a rest))
+    (f : List Nat → Bool) (hf : ∀ ys, RunD dm y s ys → f ys = true) :
+    nextD dm (s + 2 - ws.length) ws f = true := by
+  have ha := p.mem_iff.1 List.mem_cons_self
+  have pr : rest.Perm (ws.erase a) := (p.trans (List.perm_cons_erase ha)).cons_inv
+  have hh := run_len h; have hl := p.length_eq; simp only [List.length_cons] at hl hh
+  have hsl : 1 ≤ s + 2 - ws.length := by cases save <;> simp [kept] at hh <;> omega
+  have hnc : ws.contains (negD dm a) = false := by
+    cases h : ws.contains (negD dm a) with
+    | false => rfl
+    | true => exact absurd (p.mem_iff.2 (by simpa using h)) hnm
+  have h0b : (negD dm a != 0) = true := bne_iff_ne.2 h0
+  have hdb : (negD dm a != dm) = true := bne_iff_ne.2 hd
+  apply List.any_eq_true.2 ⟨a, ha, ?_⟩
+  rw [Bool.or_eq_true]; left; rw [Bool.and_eq_true]; refine ⟨decide_eq_true hsl, ?_⟩
+  simp only [h0b, hdb, hnc, Bool.not_false, Bool.true_and]
+  have ht := hf _ (Run.perm ((keep_perm pr save a).cons _) h)
+  cases save with
+  | false => simp [kept] at ht; simp [ht]
+  | true => simp [kept] at ht hh; simp [ht, show 2 ≤ s + 2 - ws.length by omega]
+
+theorem nextD_two_sorted {dm y a b rest} {conj ka kb : Bool} {s ws} (hab : a ≤ b)
+    (p : (a :: b :: rest).Perm ws)
+    (h0 : (if conj then andD dm a b else orD dm a b) ≠ 0)
+    (hd : (if conj then andD dm a b else orD dm a b) ≠ dm)
+    (hnm : (if conj then andD dm a b else orD dm a b) ∉ (a :: b :: rest))
+    (h : RunD dm y s ((if conj then andD dm a b else orD dm a b) :: kept ka a (kept kb b rest)))
+    (f : List Nat → Bool) (hf : ∀ ys, RunD dm y s ys → f ys = true) :
+    nextD dm (s + 2 - ws.length) ws f = true := by
+  have ha := p.mem_iff.1 List.mem_cons_self
+  have pp := (p.trans (List.perm_cons_erase ha)).cons_inv
+  have hb := pp.mem_iff.1 List.mem_cons_self
+  have pr := (pp.trans (List.perm_cons_erase hb)).cons_inv
+  have hh := run_len h; have hl := p.length_eq; simp only [List.length_cons] at hl hh
+  have hnc : ws.contains (if conj then andD dm a b else orD dm a b) = false := by
+    cases h : ws.contains (if conj then andD dm a b else orD dm a b) with
+    | false => rfl
+    | true => exact absurd (p.mem_iff.2 (by simpa using h)) hnm
+  have h0b : ((if conj then andD dm a b else orD dm a b) != 0) = true := bne_iff_ne.2 h0
+  have hdb : ((if conj then andD dm a b else orD dm a b) != dm) = true := bne_iff_ne.2 hd
+  apply List.any_eq_true.2 ⟨a, ha, ?_⟩
+  rw [Bool.or_eq_true]; right; apply List.any_eq_true.2 ⟨b, hb, ?_⟩
+  rw [Bool.and_eq_true]; refine ⟨decide_eq_true hab, ?_⟩
+  apply List.any_eq_true.2 ⟨conj, by cases conj <;> simp, ?_⟩
+  simp only [h0b, hdb, hnc, Bool.not_false, Bool.true_and]
+  have ht := hf _ (Run.perm ((keep_perm (keep_perm pr kb b) ka a).cons _) h)
+  cases ka <;> cases kb <;> simp [kept] at ht hh <;>
+    simp only [ht, Bool.true_or, Bool.or_true, Bool.and_true] <;>
+    first | (simp [show 2 ≤ s + 2 - ws.length by omega]) | (simp [show 1 ≤ s + 2 - ws.length by omega])
+
+theorem nextD_two {dm y a b rest} {conj ka kb : Bool} {s ws} (p : (a :: b :: rest).Perm ws)
+    (h0 : (if conj then andD dm a b else orD dm a b) ≠ 0)
+    (hd : (if conj then andD dm a b else orD dm a b) ≠ dm)
+    (hnm : (if conj then andD dm a b else orD dm a b) ∉ (a :: b :: rest))
+    (h : RunD dm y s ((if conj then andD dm a b else orD dm a b) :: kept ka a (kept kb b rest)))
+    (f : List Nat → Bool) (hf : ∀ ys, RunD dm y s ys → f ys = true) :
+    nextD dm (s + 2 - ws.length) ws f = true := by
+  rcases le_total a b with hab | hba
+  · exact nextD_two_sorted hab p h0 hd hnm h f hf
+  · have he : (if conj then andD dm a b else orD dm a b) = (if conj then andD dm b a else orD dm b a) := by
+      cases conj <;> simp [andD, orD, Nat.and_comm, Nat.or_comm]
+    have hnm' : (if conj then andD dm b a else orD dm b a) ∉ (b :: a :: rest) := by
+      rw [← he]; intro hm; exact hnm ((List.Perm.swap _ _ _).mem_iff.1 hm)
+    apply nextD_two_sorted (conj := conj) (ka := kb) (kb := ka) hba ((List.Perm.swap _ _ _).trans p)
+      (he ▸ h0) (he ▸ hd) hnm' _ f hf
+    rw [he] at h; apply Run.perm (List.Perm.cons _ ?_) h
+    cases ka <;> cases kb <;> simp [kept]; exact List.Perm.swap _ _ _
+
+theorem nextD_complete {dm y t ws} (h : RunD dm y t ws) :
+    ∀ s, t = s + 1 → ∀ zs, ws.Perm zs → ∀ f : List Nat → Bool,
+      (∀ ys, RunD dm y s ys → f ys = true) →
+      nextD dm (s + 2 - zs.length) zs f = true := by
+  induction h using Run.fold with
+  | done => simp
+  | perm p _ ih => intro s he zs q; exact ih s he zs (p.trans q)
+  | one save h0 hd hnm h _ => intro s he zs p f hf; cases he; exact nextD_one p h0 hd hnm h f hf
+  | two conj ka kb h0 hd hnm h _ => intro s he zs p f hf; cases he; exact nextD_two p h0 hd hnm h f hf
+
+def span (f : Nat → Bool) : Nat → Nat → Bool
+  | 0, _ => true
+  | n + 1, i => f i && span f n (i + 1)
+
+theorem span_ok {f n o} (h : span f n o = true) : ∀ i, o ≤ i → i < o + n → f i = true := by
+  induction n generalizing o with
+  | zero => omega
+  | succ n ih =>
+    simp only [span, Bool.and_eq_true] at h; intro i hi hj
+    rcases Nat.eq_or_lt_of_le hi with rfl | hi
+    · exact h.1
+    · exact ih h.2 i (by omega) (by omega)
+
+theorem range_split {P : Nat → Prop} {lo mid hi : Nat}
+    (h1 : ∀ i, lo ≤ i → i < mid → P i) (h2 : ∀ i, mid ≤ i → i < hi → P i) :
+    ∀ i, lo ≤ i → i < hi → P i := fun i hlo hhi =>
+  if h : i < mid then h1 i hlo h else h2 i (Nat.le_of_not_lt h) hhi
+def gvN (w : List Nat) (g : Gate) : Nat :=
+  match g.op with
+  | .and => g.inputs.foldr (fun i acc => andD truthMask (w.getD i 0) acc) truthMask
+  | .or  => g.inputs.foldr (fun i acc => orD truthMask (w.getD i 0) acc) 0
+  | .not => match g.inputs with | [] => truthMask | i :: _ => negD truthMask (w.getD i 0)
+  | _ => 0
+
+def execN (gs : List Gate) (w : List Nat) : List Nat :=
+  gs.foldl (fun l g => l ++ [gvN l g]) w
+
+theorem gvN_bit (w : List Nat) (g : Gate) (r : Nat) (hr : r < 16)
+    (hop : g.op ∈ ({GateOp.and, GateOp.or, GateOp.not} : Set GateOp)) :
+    (gvN w g).testBit r = g.op.eval (g.inputs.map fun i => (w.map (·.testBit r)).getD i false) := by
+  have hm : truthMask.testBit r = true := by simp [truthMask_bit, hr]
+  have hgd : ∀ i, (w.map (·.testBit r)).getD i false = (w.getD i 0).testBit r := by
+    intro i; simp only [List.getD_eq_getElem?_getD, List.getElem?_map]
+    cases w[i]? with | none => simp | some v => rfl
+  simp only [Set.mem_insert_iff, Set.mem_singleton_iff] at hop
+  rcases hop with h | h | h
+  · simp only [gvN, GateOp.eval, h]
+    induction g.inputs with
+    | nil => simp [hm]
+    | cons i l ih =>
+      rw [List.foldr_cons, List.map_cons, List.all_cons, id_eq, andD, Nat.testBit_and, Nat.testBit_and, hm, Bool.and_true, hgd, ih]
+  · simp only [gvN, GateOp.eval, h]
+    induction g.inputs with
+    | nil => simp
+    | cons i l ih =>
+      rw [List.foldr_cons, List.map_cons, List.any_cons, id_eq, orD, Nat.testBit_and, Nat.testBit_or, hm, Bool.and_true, hgd, ih]
+  · simp only [gvN, GateOp.eval, h]
+    cases g.inputs with
+    | nil => simp [hm]
+    | cons i l => simp only [List.map_cons, List.headD_cons, negD, Nat.testBit_and, Nat.testBit_xor, hm, Bool.and_true, Bool.xor_true, hgd]
+
+theorem execN_bit (gs : List Gate) (w : List Nat) (r : Nat) (hr : r < 16)
+    (hfan : ∀ g ∈ gs, g.op ∈ ({GateOp.and, GateOp.or, GateOp.not} : Set GateOp)) :
+    (execN gs w).map (·.testBit r) =
+      gs.foldl (fun l g => l ++ [g.op.eval (g.inputs.map fun i => l.getD i false)]) (w.map (·.testBit r)) := by
+  induction gs generalizing w with
+  | nil => rfl
+  | cons g gs ih =>
+    simp only [execN, List.foldl_cons] at ih ⊢
+    rw [ih _ (fun g' hg' => hfan g' (List.mem_cons_of_mem _ hg'))]
+    simp [gvN_bit w g r hr (hfan g List.mem_cons_self)]
+
+theorem execN_reach (gs : List Gate) (roots : List Nat)
+    (hfan : ∀ g ∈ gs, g.op ∈ ({GateOp.and, GateOp.or, GateOp.not} : Set GateOp) ∧ g.inputs.length ≤ 2) :
+    ∀ (p : Nat) (w bank : List Nat), NatReach truthMask roots p bank →
+      (∀ v ∈ w, Avail truthMask bank v) →
+      ∃ p' bank', p' ≤ p + gs.length ∧ NatReach truthMask roots p' bank' ∧
+        ∀ v ∈ execN gs w, Avail truthMask bank' v := by
+  induction gs with
+  | nil => intro p w bank hr hsup; exact ⟨p, bank, by omega, hr, hsup⟩
+  | cons g gs ih =>
+    intro p w bank hr hsup
+    have hav_gd : ∀ i, Avail truthMask bank (w.getD i 0) := by
+      intro i; by_cases hi : i < w.length
+      · exact hsup _ (getD_mem hi)
+      · rw [List.getD_eq_default _ _ (by omega)]; exact Or.inl (Or.inl (by simp))
+
+    have hstep : ∃ p1 bank1, p1 ≤ p + 1 ∧ NatReach truthMask roots p1 bank1 ∧
+        (∀ v ∈ w ++ [gvN w g], Avail truthMask bank1 v) := by
+      have hg := hfan g List.mem_cons_self
+      simp only [Set.mem_insert_iff, Set.mem_singleton_iff] at hg
+      obtain ⟨hop, hlen⟩ := hg
+      have hand_m : ∀ a, andD truthMask a truthMask &&& truthMask = a &&& truthMask := fun a => by
+        simp [andD, Nat.and_assoc, Nat.and_self]
+      have hor_0 : ∀ a, orD truthMask a 0 &&& truthMask = a &&& truthMask := fun a => by
+        simp [orD, Nat.and_assoc, Nat.and_self]
+      have lift_w : ∀ z, (∀ v ∈ w, Avail truthMask (z :: bank) v) := fun z v hv => avail_cons z v (hsup v hv)
+      rcases hop with h | h | h
+      · rcases hgi : g.inputs with _ | ⟨i, _ | ⟨j, _ | ⟨k, l⟩⟩⟩
+        · exact ⟨p, bank, by omega, hr, fun v hv => by
+            rcases List.mem_append.1 hv with hv | hv; · exact hsup v hv
+            · rw [List.mem_singleton.1 hv]; exact Or.inl (Or.inr (by simp [gvN, h, hgi]))⟩
+        · exact ⟨p, bank, by omega, hr, fun v hv => by
+            rcases List.mem_append.1 hv with hv | hv; · exact hsup v hv
+            · rw [List.mem_singleton.1 hv]; simp only [gvN, h, hgi, List.foldr_cons, List.foldr_nil]
+              exact avail_of_eq (hand_m _).symm (hav_gd i)⟩
+        · refine ⟨p + 1, binD truthMask false (w.getD i 0) (w.getD j 0) :: bank, le_rfl,
+            Or.inr ⟨bank, _, _, false, rfl, hr, hav_gd i, hav_gd j⟩, fun v hv => ?_⟩
+          rcases List.mem_append.1 hv with hv | hv; · exact lift_w _ v hv
+          · rw [List.mem_singleton.1 hv]; simp only [gvN, h, hgi, List.foldr_cons, List.foldr_nil]
+            exact Or.inr ⟨_, List.mem_cons_self, by simp [binD, andD, Nat.and_assoc, Nat.and_self]⟩
+        · rw [hgi] at hlen; simp at hlen
+      · rcases hgi : g.inputs with _ | ⟨i, _ | ⟨j, _ | ⟨k, l⟩⟩⟩
+        · exact ⟨p, bank, by omega, hr, fun v hv => by
+            rcases List.mem_append.1 hv with hv | hv; · exact hsup v hv
+            · rw [List.mem_singleton.1 hv]; exact Or.inl (Or.inl (by simp [gvN, h, hgi]))⟩
+        · exact ⟨p, bank, by omega, hr, fun v hv => by
+            rcases List.mem_append.1 hv with hv | hv; · exact hsup v hv
+            · rw [List.mem_singleton.1 hv]; simp only [gvN, h, hgi, List.foldr_cons, List.foldr_nil]
+              exact avail_of_eq (hor_0 _).symm (hav_gd i)⟩
+        · refine ⟨p + 1, binD truthMask true (w.getD i 0) (w.getD j 0) :: bank, le_rfl,
+            Or.inr ⟨bank, _, _, true, rfl, hr, hav_gd i, hav_gd j⟩, fun v hv => ?_⟩
+          rcases List.mem_append.1 hv with hv | hv; · exact lift_w _ v hv
+          · rw [List.mem_singleton.1 hv]; simp only [gvN, h, hgi, List.foldr_cons, List.foldr_nil]
+            exact Or.inr ⟨_, List.mem_cons_self, by apply Nat.eq_of_testBit_eq; intro r; simp [binD, orD]; cases truthMask.testBit r <;> simp⟩
+        · rw [hgi] at hlen; simp at hlen
+      · rcases hgi : g.inputs with _ | ⟨i, l⟩
+        · exact ⟨p, bank, by omega, hr, fun v hv => by
+            rcases List.mem_append.1 hv with hv | hv; · exact hsup v hv
+            · rw [List.mem_singleton.1 hv]; exact Or.inl (Or.inr (by simp [gvN, h, hgi]))⟩
+        · refine ⟨p + 1, negD truthMask (w.getD i 0) :: bank, le_rfl,
+            Or.inl ⟨bank, _, rfl, hr, hav_gd i⟩, fun v hv => ?_⟩
+          rcases List.mem_append.1 hv with hv | hv; · exact lift_w _ v hv
+          · rw [List.mem_singleton.1 hv]; simp only [gvN, h, hgi]; exact Or.inr ⟨_, List.mem_cons_self, rfl⟩
+    obtain ⟨p1, bank1, hp1, hr1, hsup1⟩ := hstep
+    obtain ⟨p2, bank2, hp2, hr2, hsup2⟩ := ih (fun g' hg' => hfan g' (List.mem_cons_of_mem _ hg')) p1 _ bank1 hr1 hsup1
+    exact ⟨p2, bank2, by simp; omega, hr2, hsup2⟩
+
+def roots : List Nat := [15, 240, 3840, 61440, 4369, 8738, 17476, 34952]
+def target : Nat := 5871
+def goal : Nat := target &&& truthMask
+
+def pairs : List (Nat × Nat) := [(4, 5), (14, 6), (8, 0), (13, 9), (14, 12), (11, 10), (15, 3), (4, 7), (8, 9), (15, 7), (15, 12), (11, 9), (4, 0), (13, 1), (13, 5), (8, 12), (11, 3), (14, 2), (14, 10), (4, 12), (8, 10), (11, 7), (4, 6), (13, 12), (4, 3), (11, 0), (11, 1), (11, 2), (11, 5), (11, 6), (11, 12), (13, 3), (13, 7), (14, 3), (14, 7)]
+
+def states : Nat → List (List Nat)
+  | 2 => [[2032, 4383], [4080, 6431], [4368, 63488], [4369, 63489], [4383, 63503], [6416, 61440], [6417, 61441], [6431, 61455], [59119, 61440], [61167, 63488]]
+  | 3 => [[1, 4369, 63488], [1, 6417, 61440], [15, 2032, 4369], [15, 2039, 4369], [15, 2047, 4369], [15, 4080, 6417], [15, 4095, 6417], [15, 4369, 63488], [15, 4369, 63496], [15, 4369, 63503], [15, 4383, 63488], [15, 4497, 63624], [15, 6417, 61440], [15, 6417, 61455], [15, 6425, 61440], [15, 6431, 61440], [15, 59118, 61440], [15, 61166, 63488], [143, 4369, 63624], [240, 1792, 4383], [240, 3840, 6431], [240, 4383, 63631], [240, 4383, 63743], [255, 4369, 63631], [255, 4369, 63736], [2048, 4080, 4383], [2048, 4368, 61440], [2048, 4369, 61441], [2048, 4383, 61455], [2048, 61167, 61440], [2049, 4369, 61440], [2063, 4080, 4369], [2063, 4369, 61455], [2063, 4369, 63488], [2063, 4383, 61440], [2288, 3840, 4383], [4080, 4369, 63488], [4080, 6417, 61440], [4369, 8751, 63488], [4369, 17487, 63488], [4369, 34959, 63488], [4369, 61455, 63488], [4369, 63488, 63503], [4369, 63488, 65520], [4369, 63631, 65280], [4369, 63736, 65280], [6417, 8751, 61440], [6417, 17487, 61440], [6417, 61440, 61455], [6417, 61440, 65520], [7953, 26223, 61440]]
+  | 4 => [[1, 2048, 4369, 61440], [15, 128, 4369, 63624], [15, 240, 1792, 4369], [15, 240, 1911, 4369], [15, 240, 3840, 6417], [15, 240, 4369, 63488], [15, 240, 4369, 63624], [15, 240, 4369, 63631], [15, 240, 4369, 63736], [15, 240, 4369, 63743], [15, 240, 4383, 63624], [15, 240, 6417, 61440], [15, 240, 26214, 36744], [15, 240, 36744, 39321], [15, 240, 61166, 63624], [15, 255, 4369, 63624], [15, 2048, 4080, 4369], [15, 2048, 4095, 4369], [15, 2048, 4369, 61440], [15, 2048, 4369, 61455], [15, 2048, 4369, 63488], [15, 2048, 4383, 61440], [15, 2048, 6417, 61440], [15, 2048, 61166, 61440], [15, 2056, 4369, 61440], [15, 2063, 4369, 61440], [15, 2288, 3840, 4369], [15, 2304, 4369, 61440], [15, 3840, 4369, 63488], [15, 3840, 6417, 61440], [15, 4369, 4593, 63624], [15, 4369, 6417, 61440], [15, 4369, 8738, 63488], [15, 4369, 17476, 63488], [15, 4369, 26358, 61440], [15, 4369, 30711, 61440], [15, 4369, 34816, 61440], [15, 4369, 34824, 61440], [15, 4369, 34952, 63488], [15, 4369, 61440, 63487], [15, 4369, 61440, 63488], [15, 4369, 63488], [15, 4369, 63624, 65280], [15, 4369, 63624, 65295], [15, 4497, 34952, 61440], [15, 6417, 8738, 61440], [15, 6417, 17476, 61440], [15, 6417, 34952, 61440], [15, 6417, 61440], [15, 7953, 26214, 61440], [15, 7953, 39321, 61440], [143, 4369, 34952, 61440], [240, 255, 4369, 63624], [240, 2048, 3840, 4383], [240, 2063, 3840, 4369], [240, 2304, 4369, 61440], [240, 3840, 4369, 63488], [240, 3840, 4383, 26214], [240, 3840, 4383, 30583], [240, 3840, 4383, 34952], [240, 3840, 4383, 34959], [240, 3840, 4383, 35064], [240, 3840, 4383, 39321], [240, 3840, 4383, 39327], [240, 3840, 4383, 63624], [240, 3840, 6417, 61440], [240, 3840, 34952, 61152], [240, 4080, 4383, 34952], [240, 4369, 26223, 61440], [240, 4369, 63624, 65280], [240, 4369, 63624, 65520], [240, 4383, 34952, 36744], [240, 4383, 34952, 61455], [240, 4383, 34952, 61695], [240, 4383, 34959, 61440], [240, 26223, 34952, 61440], [255, 3840, 4369, 34959], [255, 3840, 4369, 35064], [255, 3855, 4369, 34952], [255, 4080, 4369, 34952], [255, 4369, 34952, 61455], [255, 4369, 34952, 61680], [255, 4369, 34959, 61440], [255, 4369, 35064, 61440], [2048, 2063, 4369, 61440], [2048, 4080, 4369, 61440], [2048, 4369, 8751, 61440], [2048, 4369, 17487, 61440], [2048, 4369, 34959, 61440], [2048, 4369, 61440, 61455], [2048, 4369, 61440, 65520], [2063, 3840, 4369, 61440], [2288, 3840, 4369, 61440], [3840, 4080, 4383, 34952], [3840, 4095, 4369, 34959], [3840, 4095, 4369, 35064], [3840, 4368, 34952, 61440], [3840, 4369, 26223, 61440], [3840, 4369, 26358, 61440], [3840, 4369, 30471, 61440], [3840, 4369, 30576, 61440], [3840, 4369, 34952, 61441], [3840, 4369, 34953, 61440], [3840, 4369, 34959, 61440], [3840, 4369, 34959, 65280], [3840, 4369, 34968, 61440], [3840, 4369, 35064, 61440], [3840, 4369, 35064, 61713], [3840, 4369, 35064, 65280], [3840, 4369, 61440, 63631], [3840, 4369, 61440, 63736], [3840, 4383, 34952, 61455], [3840, 4383, 34952, 65295], [3840, 4383, 34959, 61440], [3840, 26214, 34959, 61440], [3840, 26223, 34952, 61440], [3840, 34952, 61167, 61440], [3840, 34959, 39321, 61440], [3840, 34959, 39327, 61440], [3840, 34959, 61166, 61440], [3840, 35064, 61166, 61440], [3855, 4080, 4369, 34952], [3855, 4369, 34952, 61455], [3855, 4369, 34952, 65280], [3856, 4369, 34952, 61440], [4080, 4369, 34952, 61680], [4080, 4369, 34952, 65280], [4369, 7953, 34959, 61440], [4369, 8751, 17652, 61440], [4369, 8946, 17487, 61440], [4369, 34952, 61455, 61680], [4369, 34952, 61455, 65280], [4369, 34952, 61680, 65280], [4369, 34959, 61440, 61695], [4369, 34959, 61440, 65280], [4369, 35064, 61440, 61695], [4369, 35064, 61440, 65280], [7953, 8738, 17487, 61440], [7953, 8751, 17476, 61440]]
+  | 5 => [[1, 3840, 4369, 34952, 61440], [15, 128, 4369, 34952, 61440], [15, 240, 2048, 3840, 4369], [15, 240, 2048, 4369, 61440], [15, 240, 3840, 4369, 26214], [15, 240, 3840, 4369, 30583], [15, 240, 3840, 4369, 34952], [15, 240, 3840, 4369, 34959], [15, 240, 3840, 4369, 35064], [15, 240, 3840, 4369, 39321], [15, 240, 3840, 4369, 63624], [15, 240, 3840, 4383, 34952], [15, 240, 3840, 26214, 34952], [15, 240, 3840, 34952, 39321], [15, 240, 3840, 34952, 61166], [15, 240, 3855, 4369, 34952], [15, 240, 4080, 4369, 34952], [15, 240, 4095, 4369, 34952], [15, 240, 4369, 8738, 63624], [15, 240, 4369, 17476, 63624], [15, 240, 4369, 26214, 61440], [15, 240, 4369, 30583, 61440], [15, 240, 4369, 34952, 36744], [15, 240, 4369, 34952, 61440], [15, 240, 4369, 34952, 61455], [15, 240, 4369, 34952, 61680], [15, 240, 4369, 34952, 61695], [15, 240, 4369, 34952, 63624], [15, 240, 4369, 34959, 61440], [15, 240, 4369, 35064, 61440], [15, 240, 4369, 39321, 61440], [15, 240, 4369, 61440, 63624], [15, 240, 4369, 63624], [15, 240, 4383, 34952, 61440], [15, 240, 8738, 17476, 36744], [15, 240, 26214, 34952, 61440], [15, 240, 34952, 39321, 61440], [15, 240, 34952, 61166, 61440], [15, 255, 3840, 4369, 34952], [15, 255, 4369, 34952, 61440], [15, 2048, 3840, 4369, 61440], [15, 2048, 4369, 8738, 61440], [15, 2048, 4369, 17476, 61440], [15, 2048, 4369, 34952, 61440], [15, 2048, 4369, 61440], [15, 3840, 4080, 4369, 34952], [15, 3840, 4095, 4369, 34952], [15, 3840, 4369, 26214, 61440], [15, 3840, 4369, 30583, 61440], [15, 3840, 4369, 34952, 61440], [15, 3840, 4369, 34952, 61455], [15, 3840, 4369, 34952, 65280], [15, 3840, 4369, 34952, 65295], [15, 3840, 4369, 34959, 61440], [15, 3840, 4369, 35064, 61440], [15, 3840, 4369, 39321, 61440], [15, 3840, 4369, 61440, 63624], [15, 3840, 4383, 34952, 61440], [15, 3840, 26214, 34952, 61440], [15, 3840, 34952, 39321, 61440], [15, 3840, 34952, 61166, 61440], [15, 3855, 4369, 34952, 61440], [15, 4369, 4593, 34952, 61440], [15, 4369, 7953, 34952, 61440], [15, 4369, 8738, 17652, 61440], [15, 4369, 8946, 17476, 61440], [15, 4369, 8946, 34952, 61440], [15, 4369, 12066, 34952, 61440], [15, 4369, 17652, 34952, 61440], [15, 4369, 20292, 34952, 61440], [15, 4369, 34952, 61440, 61680], [15, 4369, 34952, 61440, 61695], [15, 4369, 34952, 61440, 65280], [15, 4369, 34952, 61440, 65295], [15, 7953, 8738, 17476, 61440], [16, 3840, 4369, 34952, 61440], [240, 255, 3840, 4369, 34952], [240, 255, 4369, 34952, 61440], [240, 2048, 3840, 4369, 61440], [240, 3840, 3855, 4369, 34952], [240, 3840, 4095, 4369, 34952], [240, 3840, 4369, 4383, 34952], [240, 3840, 4369, 26214, 61440], [240, 3840, 4369, 30583, 61440], [240, 3840, 4369, 34952, 61440], [240, 3840, 4369, 34952, 61680], [240, 3840, 4369, 34952, 61713], [240, 3840, 4369, 34952, 65280], [240, 3840, 4369, 34952, 65520], [240, 3840, 4369, 34959, 61440], [240, 3840, 4369, 35064, 61440], [240, 3840, 4369, 39321, 61440], [240, 3840, 4369, 61440, 63624], [240, 3840, 4383, 8738, 17476], [240, 3840, 4383, 8738, 34952], [240, 3840, 4383, 17476, 34952], [240, 3840, 4383, 34952], [240, 3840, 4383, 34952, 61440], [240, 3840, 26214, 34952, 61440], [240, 3840, 34952, 39321, 61440], [240, 3840, 34952, 61166, 61440], [240, 4080, 4369, 34952, 61440], [240, 4369, 8738, 17487, 61440], [240, 4369, 8751, 17476, 61440], [240, 4369, 8751, 34952, 61440], [240, 4369, 12066, 34952, 61440], [240, 4369, 17487, 34952, 61440], [240, 4369, 20292, 34952, 61440], [240, 4369, 34952, 61440, 61455], [240, 4369, 34952, 61440, 61695], [240, 4369, 34952, 61440, 65280], [240, 4369, 34952, 61440, 65520], [240, 8738, 17487, 34952, 61440], [240, 8751, 17476, 34952, 61440], [3840, 3855, 4369, 34952, 61440], [3840, 4080, 4369, 34952, 61440], [3840, 4369, 8738, 17487, 61440], [3840, 4369, 8738, 17652, 61440], [3840, 4369, 8738, 34959, 61440], [3840, 4369, 8738, 35064, 61440], [3840, 4369, 8751, 17476, 61440], [3840, 4369, 8751, 34952, 61440], [3840, 4369, 8946, 17476, 61440], [3840, 4369, 8946, 34952, 61440], [3840, 4369, 17476, 34959, 61440], [3840, 4369, 17476, 35064, 61440], [3840, 4369, 17487, 34952, 61440], [3840, 4369, 17652, 34952, 61440], [3840, 4369, 34952, 34959, 61440], [3840, 4369, 34952, 35064, 61440], [3840, 4369, 34952, 61440, 61455], [3840, 4369, 34952, 61440, 61680], [3840, 4369, 34952, 61440, 65295], [3840, 4369, 34952, 61440, 65520], [3840, 4369, 34959, 61440], [3840, 4369, 35064, 61440], [3840, 8738, 17476, 34959, 61440], [3840, 8738, 17487, 34952, 61440], [3840, 8751, 17476, 34952, 61440]]
+  | 6 => [[15, 240, 3840, 4369, 8738, 17476], [15, 240, 3840, 4369, 8738, 34952], [15, 240, 3840, 4369, 17476, 34952], [15, 240, 3840, 4369, 34952], [15, 240, 3840, 4369, 34952, 61440], [15, 240, 3840, 8738, 17476, 34952], [15, 240, 4369, 8738, 17476, 61440], [15, 240, 4369, 8738, 34952, 61440], [15, 240, 4369, 17476, 34952, 61440], [15, 240, 4369, 34952, 61440], [15, 240, 8738, 17476, 34952, 61440], [15, 3840, 4369, 8738, 17476, 61440], [15, 3840, 4369, 8738, 34952, 61440], [15, 3840, 4369, 17476, 34952, 61440], [15, 3840, 4369, 34952, 61440], [15, 3840, 8738, 17476, 34952, 61440], [240, 3840, 4369, 8738, 17476, 61440], [240, 3840, 4369, 8738, 34952, 61440], [240, 3840, 4369, 17476, 34952, 61440], [240, 3840, 4369, 34952, 61440], [240, 3840, 8738, 17476, 34952, 61440]]
+  | _ => []
+
+def listed (s : Nat) (ws : List Nat) : Bool := (states s).any (fun listedWs => ws.isPerm listedWs)
+
+def blocked (s : Nat) (ws : List Nat) : Bool :=
+  match s with
+  | 0 => ws != [goal]
+  | s + 1 => !(nextD truthMask (s + 2 - ws.length) ws
+      (fun ys => coversP pairs s ys && !(listed s ys)))
+
+private theorem validPairs :
+    pairs.all (fun p => truthMask.testBit p.1 && truthMask.testBit p.2 &&
+                      !goal.testBit p.1 && goal.testBit p.2) = true := by decide +kernel
+
+set_option maxRecDepth 40000 in
+set_option maxHeartbeats 0 in
+private theorem checkedStates (s : Nat) (hs : s ≤ 6) :
+    (states s).all (blocked s) = true := by
+  interval_cases s <;> decide +kernel
+
+private theorem impossibleState : ∀ s ≤ 6, ∀ ws ∈ states s, ¬ RunD truthMask goal s ws := by
+  intro s
+  induction s using Nat.strong_induction_on with
+  | ind s ih =>
+    intro hs ws hw hrun
+    have hc := List.all_eq_true.1 (checkedStates s hs) ws hw
+    cases s with
+    | zero => simp [blocked, zero_done hrun rfl] at hc
+    | succ s =>
+      have good (ys : List Nat) (h : RunD truthMask goal s ys) :
+          (coversP pairs s ys && !(listed s ys)) = true := by
+        have hcov := coversP_ok (by decide +kernel : truthMask &&& truthMask = truthMask) pairs validPairs h
+        rw [hcov, Bool.true_and, Bool.not_eq_true', listed, List.any_eq_false]
+        intro zs hzs
+        by_contra! hb
+        exact ih s (by omega) (by omega) zs hzs (Run.perm (List.isPerm_iff.1 hb) h)
+      have hn := nextD_complete hrun s rfl ws (List.Perm.refl _) _ good
+      simp [blocked, hn] at hc
+
+def rootCheck (s : Nat) (ws : List Nat) : Bool :=
+  decide (s + 1 < ws.length) || !(coversP pairs s ws) || listed s ws
+
+def inputSubsets : List (List Nat) := roots.sublists
+
+set_option maxRecDepth 40000 in
+set_option maxHeartbeats 0 in
+private theorem checkedSubsets :
+    (inputSubsets.all fun ws => (List.range 7).all fun s => rootCheck s ws) = true := by
+  decide +kernel
+
+private theorem impossibleRoot {s : Nat} {ws : List Nat} (hs : s ≤ 6)
+    (hsub : ws.Sublist roots) (hrun : RunD truthMask goal s ws) : False := by
+  have hmem : ws ∈ inputSubsets := List.mem_sublists.2 hsub
+  have hws := List.all_eq_true.1 checkedSubsets ws hmem
+  have hc : rootCheck s ws = true := List.all_eq_true.1 hws s (List.mem_range.2 (by omega))
+  have hcov := coversP_ok (by decide +kernel : truthMask &&& truthMask = truthMask) pairs validPairs hrun
+  have hlen := run_len hrun
+  have hblocked : listed s ws = true := by
+    simpa [rootCheck, hcov, Nat.not_lt.mpr hlen] using hc
+  obtain ⟨zs, hzs, hz⟩ := List.any_eq_true.1 hblocked
+  exact impossibleState s hs zs hzs (Run.perm (List.isPerm_iff.1 hz) hrun)
+
+private theorem rootsAgree : ∀ r : Fin 16,
+    roots.map (·.testBit r.val) = PEqualNP.Represents.oneEach
+      (Fin.ofNat 4 (r.val / 4)) (Fin.ofNat 4 (r.val % 4)) := by decide +kernel
+
+private theorem domainRows : ∀ r : Fin 16, truthMask.testBit r.val = true := by decide +kernel
+private theorem targetIndex : ∀ r : Fin 16, 4 * (r.val / 4) + (r.val % 4) = r.val := by decide
+
+private theorem rulesOut (C : Circuit) (hfan : FanInTwo C) (hs : C.size ≤ 6)
+    (hrep : PEqualNP.Represents.Represents
+      (fun u v : Fin 4 => target.testBit (4 * u.val + v.val)) C) : False := by
+  have hsup0 : ∀ v ∈ roots, Avail truthMask roots v := fun v hv => Or.inr ⟨v, hv, rfl⟩
+  obtain ⟨p, bank, hp, hr, hsup⟩ := execN_reach C.gates roots hfan 0 roots roots rfl hsup0
+  set out := (execN C.gates roots).getD C.output 0
+  have hout : out &&& truthMask = target &&& truthMask := by
+    apply Nat.eq_of_testBit_eq
+    intro r
+    rw [Nat.testBit_and, Nat.testBit_and]
+    by_cases hlt : r < 16
+    · rw [domainRows ⟨r, hlt⟩, Bool.and_true, Bool.and_true]
+      have h1 := execN_bit C.gates roots r hlt (fun g hg => (hfan g hg).1)
+      have h2 := congrArg (fun l => l.getD C.output false) h1
+      rw [rootsAgree ⟨r, hlt⟩] at h2
+      have hgd : ((execN C.gates roots).map (·.testBit r)).getD C.output false = out.testBit r := by
+        simp only [out, List.getD_eq_getElem?_getD, List.getElem?_map]
+        cases (execN C.gates roots)[C.output]? with | none => simp | some v => rfl
+      rw [hgd] at h2
+      have hr5 : r / 4 < 4 := by omega
+      have hcol : r % 4 < 4 := Nat.mod_lt _ (by decide)
+      have hv := hrep (Fin.ofNat 4 (r / 4)) (Fin.ofNat 4 (r % 4))
+      simp only [Fin.val_ofNat, Nat.mod_eq_of_lt hr5, Nat.mod_eq_of_lt hcol] at hv
+      rw [targetIndex ⟨r, hlt⟩] at hv
+      exact h2.trans hv
+    · have hd : truthMask.testBit r = false := by
+        apply Nat.testBit_lt_two_pow
+        have h25 : truthMask < 2 ^ 16 := by decide
+        exact lt_of_lt_of_le h25 (Nat.pow_le_pow_right (by omega) (by omega))
+      rw [hd, Bool.and_false, Bool.and_false]
+  have hav_out : Avail truthMask bank out := by
+    by_cases hi : C.output < (execN C.gates roots).length
+    · exact hsup _ (getD_mem hi)
+    · rw [show out = 0 from List.getD_eq_default _ _ (by omega)]
+      exact Or.inl (Or.inl (by simp))
+  have hn : ¬ IsConst truthMask target := by unfold IsConst target truthMask; decide
+  obtain ⟨s, ws, hsp, hnd, hrin, hrun⟩ :=
+    reach_to_run (by decide +kernel : truthMask &&& truthMask = truthMask) hn hr (avail_of_eq hout hav_out)
+  have hmask : roots.map (· &&& truthMask) = roots := by decide
+  rw [hmask] at hrin
+  have hrnd : roots.Nodup := by decide
+  let sub := roots.filter (fun x => decide (x ∈ ws))
+  have hsub : sub.Sublist roots := List.filter_sublist
+  have hp' : ws.Perm sub := by
+    refine (List.perm_ext_iff_of_nodup hnd (List.Nodup.filter _ hrnd)).2 ?_
+    intro x
+    simp only [sub, List.mem_filter, decide_eq_true_eq]
+    exact ⟨fun hx => ⟨hrin x hx, hx⟩, fun h => h.2⟩
+  have hz : C.gates.length ≤ 6 := hs
+  exact impossibleRoot (by omega) hsub (Run.perm hp' hrun)
+
+end PEqualNP.Outside.L_meta_26312
+
+theorem PEqualNP.Outside.L_meta_26312 : ¬ (∃ C : PEqualNP.CircuitLowerBounds.Circuit, PEqualNP.MetaComplexity.FanInTwo C ∧ C.size ≤ 6 ∧ PEqualNP.Represents.Represents (fun (u : Fin 4) (v : Fin 4) => (([15, 14, 6, 1] : List ℕ).getD u.val 0).testBit v.val) C) := by
+  rintro ⟨C, hf, hs, hr⟩
+  apply PEqualNP.Outside.L_meta_26312.rulesOut C hf hs
+  have ht : ∀ u v : Fin 4, (fun (u : Fin 4) (v : Fin 4) => (([15, 14, 6, 1] : List ℕ).getD u.val 0).testBit v.val) u v = PEqualNP.Outside.L_meta_26312.target.testBit (4 * u.val + v.val) := by decide +kernel
+  have he : (fun (u : Fin 4) (v : Fin 4) => (([15, 14, 6, 1] : List ℕ).getD u.val 0).testBit v.val) = (fun u v : Fin 4 => PEqualNP.Outside.L_meta_26312.target.testBit (4 * u.val + v.val)) :=
+    funext fun u => funext fun v => ht u v
+  rw [← he]
+  exact hr

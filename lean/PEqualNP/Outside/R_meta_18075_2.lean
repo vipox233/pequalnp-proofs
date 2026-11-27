@@ -1,0 +1,16 @@
+import PEqualNP.Defs
+
+open PEqualNP.CircuitLowerBounds
+open PEqualNP.MetaComplexity
+
+/-- Cut for `L-meta-18075`: the circuit has a second gate, or it does not. -/
+theorem PEqualNP.Outside.R_meta_18075_2 :
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit), ∀ x2 ∈ [(1 : ℕ), (13 : ℕ), (14 : ℕ)], (∀ (x4 : ℕ) (x5 : PEqualNP.CircuitLowerBounds.Gate), x1.gates[x4]? = Option.some x5 → (x5.op = PEqualNP.CircuitLowerBounds.GateOp.and ∨ x5.op = PEqualNP.CircuitLowerBounds.GateOp.or) ∧ ∃ (x7 : ℕ) (x8 : ℕ), x5.inputs = [x7, x8] ∧ x7 ≠ x8 ∧ x7 < (26 : ℕ) + x4 ∧ x8 < (26 : ℕ) + x4) → (∀ (x5 : Fin (26 : ℕ) → Bool), x1.eval (List.ofFn x5) = Bool.true ↔ ∃ (x6 : Fin (13 : ℕ)) (x7 : Fin (13 : ℕ)), (x6 = x7 ∨ x6 = x7 + (1 : Fin (13 : ℕ)) ∨ x6 = x7 + (3 : Fin (13 : ℕ)) ∨ x6 = x7 + (9 : Fin (13 : ℕ))) ∧ x5 (Fin.castAdd (13 : ℕ) x6) = Bool.true ∧ x5 (Fin.natAdd (13 : ℕ) x7) = Bool.true) → (∀ (x6 x7 : Fin (26 : ℕ)), x6 ≠ x7 → ∃ x9 ∈ x1.gates, ↑x6 ∈ x9.inputs ∧ ↑x7 ∉ x9.inputs) → x1.gates.head? = Option.some { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [(0 : ℕ), x2] : PEqualNP.CircuitLowerBounds.Gate } → (∃ (g : PEqualNP.CircuitLowerBounds.Gate), x1.gates[1]? = Option.some g) → (63 : ℕ) ≤ x1.size) →
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit), ∀ x2 ∈ [(1 : ℕ), (13 : ℕ), (14 : ℕ)], (∀ (x4 : ℕ) (x5 : PEqualNP.CircuitLowerBounds.Gate), x1.gates[x4]? = Option.some x5 → (x5.op = PEqualNP.CircuitLowerBounds.GateOp.and ∨ x5.op = PEqualNP.CircuitLowerBounds.GateOp.or) ∧ ∃ (x7 : ℕ) (x8 : ℕ), x5.inputs = [x7, x8] ∧ x7 ≠ x8 ∧ x7 < (26 : ℕ) + x4 ∧ x8 < (26 : ℕ) + x4) → (∀ (x5 : Fin (26 : ℕ) → Bool), x1.eval (List.ofFn x5) = Bool.true ↔ ∃ (x6 : Fin (13 : ℕ)) (x7 : Fin (13 : ℕ)), (x6 = x7 ∨ x6 = x7 + (1 : Fin (13 : ℕ)) ∨ x6 = x7 + (3 : Fin (13 : ℕ)) ∨ x6 = x7 + (9 : Fin (13 : ℕ))) ∧ x5 (Fin.castAdd (13 : ℕ) x6) = Bool.true ∧ x5 (Fin.natAdd (13 : ℕ) x7) = Bool.true) → (∀ (x6 x7 : Fin (26 : ℕ)), x6 ≠ x7 → ∃ x9 ∈ x1.gates, ↑x6 ∈ x9.inputs ∧ ↑x7 ∉ x9.inputs) → x1.gates.head? = Option.some { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [(0 : ℕ), x2] : PEqualNP.CircuitLowerBounds.Gate } → ¬(∃ (g : PEqualNP.CircuitLowerBounds.Gate), x1.gates[1]? = Option.some g) → (63 : ℕ) ≤ x1.size) →
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit), ∀ x2 ∈ [(1 : ℕ), (13 : ℕ), (14 : ℕ)], (∀ (x4 : ℕ) (x5 : PEqualNP.CircuitLowerBounds.Gate), x1.gates[x4]? = Option.some x5 → (x5.op = PEqualNP.CircuitLowerBounds.GateOp.and ∨ x5.op = PEqualNP.CircuitLowerBounds.GateOp.or) ∧ ∃ (x7 : ℕ) (x8 : ℕ), x5.inputs = [x7, x8] ∧ x7 ≠ x8 ∧ x7 < (26 : ℕ) + x4 ∧ x8 < (26 : ℕ) + x4) → (∀ (x5 : Fin (26 : ℕ) → Bool), x1.eval (List.ofFn x5) = Bool.true ↔ ∃ (x6 : Fin (13 : ℕ)) (x7 : Fin (13 : ℕ)), (x6 = x7 ∨ x6 = x7 + (1 : Fin (13 : ℕ)) ∨ x6 = x7 + (3 : Fin (13 : ℕ)) ∨ x6 = x7 + (9 : Fin (13 : ℕ))) ∧ x5 (Fin.castAdd (13 : ℕ) x6) = Bool.true ∧ x5 (Fin.natAdd (13 : ℕ) x7) = Bool.true) → (∀ (x6 x7 : Fin (26 : ℕ)), x6 ≠ x7 → ∃ x9 ∈ x1.gates, ↑x6 ∈ x9.inputs ∧ ↑x7 ∉ x9.inputs) → x1.gates.head? = Option.some { op := PEqualNP.CircuitLowerBounds.GateOp.or, inputs := [(0 : ℕ), x2] : PEqualNP.CircuitLowerBounds.Gate } → (63 : ℕ) ≤ x1.size) := by
+  classical
+  intro h1 h2 x1
+  intros
+  by_cases h : (∃ (g : PEqualNP.CircuitLowerBounds.Gate), x1.gates[1]? = Option.some g)
+  · apply h1 <;> assumption
+  · apply h2 <;> assumption

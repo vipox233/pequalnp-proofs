@@ -1,0 +1,29 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_17695_1
+    (hEqJunk : ∀ (x1 : SimpleGraph (Fin (11 : ℕ))) [DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit) (x4 : ℕ) (x6 : Finset (Fin (11 : ℕ))) (s4 : Finset (Sym2 (Fin (11 : ℕ)))),
+      have x13 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x3;
+      (x1 = PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))] ∧ PEqualNP.TopForm.IsLeastAO x1 x3 ∧ PEqualNP.TopForm.TopForm x1 x3 ∧ x3.size < (22 : ℕ) ∧ PEqualNP.TopForm.junk x1 x3 = {x4} ∧ (∀ e, e ∈ s4 ↔ e ∈ PEqualNP.TopForm.gammaE x1 x3 x4 ∧ ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x4, v ∈ e) ∧ (3 : ℕ) ≤ x13.card ∧ PEqualNP.MetaComplexity.NestedCover.IsMinCover (x1.deleteEdges ↑x13) x6 ∧ (7 : ℕ) ≤ x6.card + x13.card ∧ x6.card + (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x3).card + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card ≤ (4 : ℕ) + x13.card ∧ (∃ (x18 : Fin (11 : ℕ) → Bool), PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x4 x18 = Bool.true ∧ PEqualNP.MetaComplexity.NestedCover.graphFun x1 ∅ x18 = Bool.false) ∧ (PEqualNP.TopForm.wmax x1 x3 x4).Nonempty ∧ s4.card ≤ (7 : ℕ) ∧ x13 ⊆ s4) → False)
+    (hDiffJunk : ∀ (x1 : SimpleGraph (Fin (11 : ℕ))) [DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit) (x4 x5 : ℕ) (x6 : Finset (Fin (11 : ℕ))) (s4 s5 : Finset (Sym2 (Fin (11 : ℕ)))),
+      have x13 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x3;
+      (x4 ≠ x5 ∧ x1 = PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))] ∧ PEqualNP.TopForm.IsLeastAO x1 x3 ∧ PEqualNP.TopForm.TopForm x1 x3 ∧ x3.size < (22 : ℕ) ∧ PEqualNP.TopForm.junk x1 x3 = {x4, x5} ∧ (∀ e, e ∈ s4 ↔ e ∈ PEqualNP.TopForm.gammaE x1 x3 x4 ∧ ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x4, v ∈ e) ∧ (∀ e, e ∈ s5 ↔ e ∈ PEqualNP.TopForm.gammaE x1 x3 x5 ∧ ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x5, v ∈ e) ∧ (3 : ℕ) ≤ x13.card ∧ PEqualNP.MetaComplexity.NestedCover.IsMinCover (x1.deleteEdges ↑x13) x6 ∧ (7 : ℕ) ≤ x6.card + x13.card ∧ x6.card + (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x3).card + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card ≤ (4 : ℕ) + x13.card ∧ (∃ (x18 : Fin (11 : ℕ) → Bool), PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x4 x18 = Bool.true ∧ PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x5 x18 = Bool.true ∧ PEqualNP.MetaComplexity.NestedCover.graphFun x1 ∅ x18 = Bool.false) ∧ (PEqualNP.TopForm.wmax x1 x3 x4 ∩ PEqualNP.TopForm.wmax x1 x3 x5).Nonempty ∧ s4.card ≤ (7 : ℕ) ∧ s5.card ≤ (7 : ℕ) ∧ x13 ⊆ s4 ∪ s5) → False) :
+    ∀ (x1 : SimpleGraph (Fin (11 : ℕ))) [DecidableRel x1.Adj] (x3 : PEqualNP.CircuitLowerBounds.Circuit) (x4 x5 : ℕ) (x6 : Finset (Fin (11 : ℕ))),   x1 = PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))] →     PEqualNP.TopForm.IsLeastAO x1 x3 →       PEqualNP.TopForm.TopForm x1 x3 →         x3.size < (22 : ℕ) →           PEqualNP.TopForm.junk x1 x3 = {x4, x5} →             have x12 : ℕ → Finset (Sym2 (Fin (11 : ℕ))) := fun (x12 : ℕ) => {x13 ∈ PEqualNP.TopForm.gammaE x1 x3 x12 | ∃ x14 ∈ PEqualNP.TopForm.wmax x1 x3 x12, x14 ∈ x13};             have x13 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x3;             (3 : ℕ) ≤ x13.card → PEqualNP.MetaComplexity.NestedCover.IsMinCover (x1.deleteEdges ↑x13) x6 → (7 : ℕ) ≤ x6.card + x13.card → x6.card + (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x3).card + (PEqualNP.TopForm.orN x1 x3 \ PEqualNP.TopForm.lam x1 x3).card ≤ (4 : ℕ) + x13.card → (∃ (x18 : Fin (11 : ℕ) → Bool), PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x4 x18 = Bool.true ∧ PEqualNP.EdgeOwnership.gateVal (11 : ℕ) x3 x5 x18 = Bool.true ∧ PEqualNP.MetaComplexity.NestedCover.graphFun x1 ∅ x18 = Bool.false) → (PEqualNP.TopForm.wmax x1 x3 x4 ∩ PEqualNP.TopForm.wmax x1 x3 x5).Nonempty → (x12 x4).card ≤ (7 : ℕ) → (x12 x5).card ≤ (7 : ℕ) → (∀ x22 ∈ x13, x22 ∈ x12 x4 ∨ x22 ∈ x12 x5) → False :=
+  fun x1 inst x3 x4 x5 x6 hx1 hL hT hSz hJ hU3 hMC h7 hLe hBad hW hC4 hC5 hCov =>
+    let s4 := {e ∈ PEqualNP.TopForm.gammaE x1 x3 x4 | ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x4, v ∈ e}
+    let s5 := {e ∈ PEqualNP.TopForm.gammaE x1 x3 x5 | ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x5, v ∈ e}
+    have hs4 : ∀ e, e ∈ s4 ↔ e ∈ PEqualNP.TopForm.gammaE x1 x3 x4 ∧ ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x4, v ∈ e :=
+      fun _ => Finset.mem_filter
+    have hs5 : ∀ e, e ∈ s5 ↔ e ∈ PEqualNP.TopForm.gammaE x1 x3 x5 ∧ ∃ v ∈ PEqualNP.TopForm.wmax x1 x3 x5, v ∈ e :=
+      fun _ => Finset.mem_filter
+    (Classical.em (x4 = x5)).elim
+      (fun hEq => by
+        subst hEq
+        exact @hEqJunk x1 inst x3 x4 x6 s4
+          ⟨hx1, hL, hT, hSz, Finset.pair_eq_singleton x4 ▸ hJ, hs4, hU3, hMC, h7, hLe,
+            Exists.elim hBad (fun f hf => ⟨f, hf.1, hf.2.2⟩),
+            Finset.inter_self (PEqualNP.TopForm.wmax x1 x3 x4) ▸ hW, hC4,
+            fun e he => (hCov e he).elim id id⟩)
+      (fun hNe =>
+        @hDiffJunk x1 inst x3 x4 x5 x6 s4 s5
+          ⟨hNe, hx1, hL, hT, hSz, hJ, hs4, hs5, hU3, hMC, h7, hLe, hBad, hW, hC4, hC5,
+            fun e he => Finset.mem_union.mpr (hCov e he)⟩)

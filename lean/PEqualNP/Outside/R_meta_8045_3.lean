@@ -1,0 +1,16 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_8045_3
+    (hDiffEquiv :
+      ∀ (x3 x4 : Fin (13 : ℕ)),
+        (x3 = x4 ∨ x3 = x4 + (1 : Fin (13 : ℕ)) ∨ x3 = x4 + (3 : Fin (13 : ℕ)) ∨ x3 = x4 + (9 : Fin (13 : ℕ))) ↔
+          ↑(x3 - x4) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)])
+    (hSizeLowerDiff :
+      ∀ (x1 : PEqualNP.AndCount.AndCountCircuit (27 : ℕ)),
+        x1.WellFormed →
+        (∀ (x3 x4 : Fin (13 : ℕ)), ↑(x3 - x4) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)] → x1.eval {x6 : Fin (27 : ℕ) | Fin.cases Bool.true (fun (x7 : Fin (26 : ℕ)) => !Decidable.decide (x7 = Fin.castAdd (13 : ℕ) x3 ∨ x7 = Fin.natAdd (13 : ℕ) x4)) x6 = Bool.true} = Bool.false) →
+        (∀ (x4 x5 : Finset (Fin (13 : ℕ))), PEqualNP.GenericRejection.IsMaximalFalse (fun (x6 : Fin (13 : ℕ)) => {x6, x6 + (1 : Fin (13 : ℕ)), x6 + (3 : Fin (13 : ℕ)), x6 + (9 : Fin (13 : ℕ))}) x4 x5 → PEqualNP.GenericRejection.IsGeneric (fun (x7 : Fin (13 : ℕ)) => {x7, x7 + (1 : Fin (13 : ℕ)), x7 + (3 : Fin (13 : ℕ)), x7 + (9 : Fin (13 : ℕ))}) (3 : ℕ) x4 x5 → x1.eval {x8 : Fin (27 : ℕ) | Fin.cases Bool.true (fun (x9 : Fin (26 : ℕ)) => !Decidable.decide ((∃ x10 ∈ x4, x9 = Fin.castAdd (13 : ℕ) x10) ∨ ∃ x10 ∈ x5, x9 = Fin.natAdd (13 : ℕ) x10)) x8 = Bool.true} = Bool.true) →
+        (51 : ℕ) ≤ x1.size) :
+    (∀ (x1 : PEqualNP.AndCount.AndCountCircuit (27 : ℕ)), x1.WellFormed → (∀ (x3 x4 : Fin (13 : ℕ)), x3 = x4 ∨ x3 = x4 + (1 : Fin (13 : ℕ)) ∨ x3 = x4 + (3 : Fin (13 : ℕ)) ∨ x3 = x4 + (9 : Fin (13 : ℕ)) → x1.eval {x6 : Fin (27 : ℕ) | Fin.cases Bool.true (fun (x7 : Fin (26 : ℕ)) => !Decidable.decide (x7 = Fin.castAdd (13 : ℕ) x3 ∨ x7 = Fin.natAdd (13 : ℕ) x4)) x6 = Bool.true} = Bool.false) → (∀ (x4 x5 : Finset (Fin (13 : ℕ))), PEqualNP.GenericRejection.IsMaximalFalse (fun (x6 : Fin (13 : ℕ)) => {x6, x6 + (1 : Fin (13 : ℕ)), x6 + (3 : Fin (13 : ℕ)), x6 + (9 : Fin (13 : ℕ))}) x4 x5 → PEqualNP.GenericRejection.IsGeneric (fun (x7 : Fin (13 : ℕ)) => {x7, x7 + (1 : Fin (13 : ℕ)), x7 + (3 : Fin (13 : ℕ)), x7 + (9 : Fin (13 : ℕ))}) (3 : ℕ) x4 x5 → x1.eval {x8 : Fin (27 : ℕ) | Fin.cases Bool.true (fun (x9 : Fin (26 : ℕ)) => !Decidable.decide ((∃ x10 ∈ x4, x9 = Fin.castAdd (13 : ℕ) x10) ∨ ∃ x10 ∈ x5, x9 = Fin.natAdd (13 : ℕ) x10)) x8 = Bool.true} = Bool.true) → (51 : ℕ) ≤ x1.size) :=
+  fun x1 hWF hF hT =>
+    hSizeLowerDiff x1 hWF (fun x3 x4 hd => hF x3 x4 ((hDiffEquiv x3 x4).mpr hd)) hT
