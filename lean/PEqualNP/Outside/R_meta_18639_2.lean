@@ -1,0 +1,37 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_18639_2
+    (hPosOnZero :
+      have x1 : Bool → List (Fin (32768 : ℕ)) → List ℕ → ℕ := fun (x1 : Bool) (x2 : List (Fin (32768 : ℕ))) (x3 : List ℕ) =>
+        (List.foldl
+          (fun (x4 : List ℕ) (x5 : Fin (32768 : ℕ)) =>
+            have x6 : ℕ := x4.getD (↑x5 % (128 : ℕ)) (0 : ℕ);
+            have x7 : ℕ := x4.getD (↑x5 / (128 : ℕ) % (128 : ℕ)) (0 : ℕ);
+            x4.concat (if ↑x5 < (16384 : ℕ) then bif x1 then x6 + x7 else Min.min x6 x7 else Max.max x6 x7))
+          ((0 : ℕ) :: (bif x1 then (0 : ℕ) else (1 : ℕ)) :: x3) x2).getD ((27 : ℕ) + x2.length) (0 : ℕ);
+      have x2 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))};
+      have x3 : (Fin (13 : ℕ) → Bool) → (Fin (13 : ℕ) → Bool) → List ℕ := fun (x3 x4 : Fin (13 : ℕ) → Bool) => List.map Bool.toNat (List.ofFn x3 ++ List.ofFn x4);
+      ∀ (x4 : List (Fin (32768 : ℕ))),
+        x1 Bool.false x4 (List.replicate (26 : ℕ) (0 : ℕ)) ≠ (0 : ℕ) →
+        ∃ (x8 : Finset (Fin (13 : ℕ))), (x8.card = (3 : ℕ) ∨ x8.card = (4 : ℕ)) ∧ (∀ (x9 : Fin (13 : ℕ)), {x10 ∈ x8 | x10 - x9 ∈ x2}.card ≤ (2 : ℕ)) ∧ x1 Bool.false x4 (x3 (fun (x9 : Fin (13 : ℕ)) => Decidable.decide (x9 ∈ x8)) fun (x9 : Fin (13 : ℕ)) => Decidable.decide (∀ x10 ∈ x8, x10 - x9 ∉ x2)) ≠ (0 : ℕ))
+    (hZeroOnZero :
+      have x1 : Bool → List (Fin (32768 : ℕ)) → List ℕ → ℕ := fun (x1 : Bool) (x2 : List (Fin (32768 : ℕ))) (x3 : List ℕ) =>
+        (List.foldl
+          (fun (x4 : List ℕ) (x5 : Fin (32768 : ℕ)) =>
+            have x6 : ℕ := x4.getD (↑x5 % (128 : ℕ)) (0 : ℕ);
+            have x7 : ℕ := x4.getD (↑x5 / (128 : ℕ) % (128 : ℕ)) (0 : ℕ);
+            x4.concat (if ↑x5 < (16384 : ℕ) then bif x1 then x6 + x7 else Min.min x6 x7 else Max.max x6 x7))
+          ((0 : ℕ) :: (bif x1 then (0 : ℕ) else (1 : ℕ)) :: x3) x2).getD ((27 : ℕ) + x2.length) (0 : ℕ);
+      have x2 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))};
+      have x3 : (Fin (13 : ℕ) → Bool) → (Fin (13 : ℕ) → Bool) → List ℕ := fun (x3 x4 : Fin (13 : ℕ) → Bool) => List.map Bool.toNat (List.ofFn x3 ++ List.ofFn x4);
+      ∀ (x4 : List (Fin (32768 : ℕ))),
+        (x4.length ≤ (63 : ℕ) ∧
+          x1 Bool.false x4 (List.replicate (26 : ℕ) (0 : ℕ)) = (0 : ℕ) ∧
+          (∀ x6 ∈ [Finset.range (13 : ℕ), Finset.Ico (13 : ℕ) (26 : ℕ)], (1 : ℕ) < x1 Bool.true x4 (List.ofFn fun (x8 : Fin (26 : ℕ)) => if ↑x8 ∈ x6 then (1 : ℕ) else (0 : ℕ))) ∧
+          (∀ (x7 x8 : Fin (13 : ℕ)), x7 - x8 ∈ x2 → x1 Bool.false x4 (x3 (fun (x10 : Fin (13 : ℕ)) => Decidable.decide (x10 = x7)) fun (x10 : Fin (13 : ℕ)) => Decidable.decide (x10 = x8)) = (1 : ℕ))) →
+        ∃ (x8 : Finset (Fin (13 : ℕ))), (x8.card = (3 : ℕ) ∨ x8.card = (4 : ℕ)) ∧ (∀ (x9 : Fin (13 : ℕ)), {x10 ∈ x8 | x10 - x9 ∈ x2}.card ≤ (2 : ℕ)) ∧ x1 Bool.false x4 (x3 (fun (x9 : Fin (13 : ℕ)) => Decidable.decide (x9 ∈ x8)) fun (x9 : Fin (13 : ℕ)) => Decidable.decide (∀ x10 ∈ x8, x10 - x9 ∉ x2)) ≠ (0 : ℕ)) :
+    (have x1 : Bool → List (Fin (32768 : ℕ)) → List ℕ → ℕ := fun (x1 : Bool) (x2 : List (Fin (32768 : ℕ))) (x3 : List ℕ) =>   (List.foldl         (fun (x4 : List ℕ) (x5 : Fin (32768 : ℕ)) =>           have x6 : ℕ := x4.getD (↑x5 % (128 : ℕ)) (0 : ℕ);           have x7 : ℕ := x4.getD (↑x5 / (128 : ℕ) % (128 : ℕ)) (0 : ℕ);           x4.concat (if ↑x5 < (16384 : ℕ) then bif x1 then x6 + x7 else Min.min x6 x7 else Max.max x6 x7))         ((0 : ℕ) :: (bif x1 then (0 : ℕ) else (1 : ℕ)) :: x3) x2).getD     ((27 : ℕ) + x2.length) (0 : ℕ); have x2 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))}; have x3 : (Fin (13 : ℕ) → Bool) → (Fin (13 : ℕ) → Bool) → List ℕ := fun (x3 x4 : Fin (13 : ℕ) → Bool) => List.map Bool.toNat (List.ofFn x3 ++ List.ofFn x4); ∀ (x4 : List (Fin (32768 : ℕ))), x4.length ≤ (63 : ℕ) → (∀ x6 ∈ [Finset.range (13 : ℕ), Finset.Ico (13 : ℕ) (26 : ℕ)], (1 : ℕ) < x1 Bool.true x4 (List.ofFn fun (x8 : Fin (26 : ℕ)) => if ↑x8 ∈ x6 then (1 : ℕ) else (0 : ℕ))) → (∀ (x7 x8 : Fin (13 : ℕ)), x7 - x8 ∈ x2 → x1 Bool.false x4 (x3 (fun (x10 : Fin (13 : ℕ)) => Decidable.decide (x10 = x7)) fun (x10 : Fin (13 : ℕ)) => Decidable.decide (x10 = x8)) = (1 : ℕ)) → ∃ (x8 : Finset (Fin (13 : ℕ))), (x8.card = (3 : ℕ) ∨ x8.card = (4 : ℕ)) ∧ (∀ (x9 : Fin (13 : ℕ)), {x10 ∈ x8 | x10 - x9 ∈ x2}.card ≤ (2 : ℕ)) ∧ x1 Bool.false x4 (x3 (fun (x9 : Fin (13 : ℕ)) => Decidable.decide (x9 ∈ x8)) fun (x9 : Fin (13 : ℕ)) => Decidable.decide (∀ x10 ∈ x8, x10 - x9 ∉ x2)) ≠ (0 : ℕ)) :=
+  fun x4 hLen hDeg hInc =>
+    Or.elim (Nat.eq_zero_or_pos ((List.foldl (fun (x4 : List ℕ) (x5 : Fin (32768 : ℕ)) => have x6 : ℕ := x4.getD (↑x5 % (128 : ℕ)) (0 : ℕ); have x7 : ℕ := x4.getD (↑x5 / (128 : ℕ) % (128 : ℕ)) (0 : ℕ); x4.concat (if ↑x5 < (16384 : ℕ) then Min.min x6 x7 else Max.max x6 x7)) ((0 : ℕ) :: (1 : ℕ) :: List.replicate (26 : ℕ) (0 : ℕ)) x4).getD ((27 : ℕ) + x4.length) (0 : ℕ)))
+      (fun h0 => hZeroOnZero x4 ⟨hLen, h0, hDeg, hInc⟩)
+      (fun hPos => hPosOnZero x4 (Nat.ne_of_gt hPos))

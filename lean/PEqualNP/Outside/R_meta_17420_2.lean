@@ -1,0 +1,63 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_17420_2
+    (hDiff0 :
+      let x1 : SimpleGraph (Fin (11 : ℕ)) := PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))]
+      ∀ (x2 : PEqualNP.CircuitLowerBounds.Circuit),
+        x2.size ≤ (21 : ℕ) →
+        PEqualNP.TopForm.IsLeastAO x1 x2 →
+        PEqualNP.TopForm.TopForm x1 x2 →
+        (2 : ℕ) ≤ (PEqualNP.TopForm.junk x1 x2).card →
+        have x7 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x2
+        have x8 : ℕ := (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x2).card + (PEqualNP.TopForm.junk x1 x2).card + (PEqualNP.TopForm.orN x1 x2 \ PEqualNP.TopForm.lam x1 x2).card
+        x8 = x7.card →
+        (1 : ℕ) ≤ x7.card →
+        ∀ (x14 : Finset (Fin (11 : ℕ))),
+          x14.card = (5 : ℕ) →
+          (∃ x16 ⊆ x14, x16.card = (4 : ℕ) ∧ ∀ x17 ∈ x16, ∀ x19 ∈ x16, ¬x1.Adj x17 x19) →
+          ∃ x17 ∈ x14, ∃ x18 ∈ x14, x1.Adj x17 x18 ∧ s(x17, x18) ∉ x7)
+    (hDiff1 :
+      let x1 : SimpleGraph (Fin (11 : ℕ)) := PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))]
+      ∀ (x2 : PEqualNP.CircuitLowerBounds.Circuit),
+        x2.size ≤ (21 : ℕ) →
+        PEqualNP.TopForm.IsLeastAO x1 x2 →
+        PEqualNP.TopForm.TopForm x1 x2 →
+        (2 : ℕ) ≤ (PEqualNP.TopForm.junk x1 x2).card →
+        have x7 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x2
+        have x8 : ℕ := (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x2).card + (PEqualNP.TopForm.junk x1 x2).card + (PEqualNP.TopForm.orN x1 x2 \ PEqualNP.TopForm.lam x1 x2).card
+        x8 = x7.card + (1 : ℕ) →
+        (2 : ℕ) ≤ x7.card →
+        ∀ (x14 : Finset (Fin (11 : ℕ))),
+          x14.card = (6 : ℕ) →
+          (∃ x16 ⊆ x14, x16.card = (4 : ℕ) ∧ ∀ x17 ∈ x16, ∀ x19 ∈ x16, ¬x1.Adj x17 x19) →
+          ∃ x17 ∈ x14, ∃ x18 ∈ x14, x1.Adj x17 x18 ∧ s(x17, x18) ∉ x7)
+    (hDiff2 :
+      let x1 : SimpleGraph (Fin (11 : ℕ)) := PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))]
+      ∀ (x2 : PEqualNP.CircuitLowerBounds.Circuit),
+        x2.size ≤ (21 : ℕ) →
+        PEqualNP.TopForm.IsLeastAO x1 x2 →
+        PEqualNP.TopForm.TopForm x1 x2 →
+        (2 : ℕ) ≤ (PEqualNP.TopForm.junk x1 x2).card →
+        have x7 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x2
+        have x8 : ℕ := (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x2).card + (PEqualNP.TopForm.junk x1 x2).card + (PEqualNP.TopForm.orN x1 x2 \ PEqualNP.TopForm.lam x1 x2).card
+        x8 = x7.card + (2 : ℕ) →
+        (3 : ℕ) ≤ x7.card →
+        ∀ (x14 : Finset (Fin (11 : ℕ))),
+          x14.card = (7 : ℕ) →
+          (∃ x16 ⊆ x14, x16.card = (4 : ℕ) ∧ ∀ x17 ∈ x16, ∀ x19 ∈ x16, ¬x1.Adj x17 x19) →
+          ∃ x17 ∈ x14, ∃ x18 ∈ x14, x1.Adj x17 x18 ∧ s(x17, x18) ∉ x7) :
+    (let x1 : SimpleGraph (Fin (11 : ℕ)) := PEqualNP.EdgeOwnership.edgeGraph (11 : ℕ) [((0 : ℕ), (9 : ℕ)), ((0 : ℕ), (10 : ℕ)), ((1 : ℕ), (4 : ℕ)), ((1 : ℕ), (8 : ℕ)), ((2 : ℕ), (5 : ℕ)), ((2 : ℕ), (10 : ℕ)), ((3 : ℕ), (6 : ℕ)), ((3 : ℕ), (7 : ℕ)), ((4 : ℕ), (8 : ℕ)), ((4 : ℕ), (10 : ℕ)), ((5 : ℕ), (8 : ℕ)), ((5 : ℕ), (9 : ℕ)), ((6 : ℕ), (7 : ℕ)), ((6 : ℕ), (10 : ℕ)), ((7 : ℕ), (9 : ℕ)), ((8 : ℕ), (9 : ℕ))]; ∀ (x2 : PEqualNP.CircuitLowerBounds.Circuit),   x2.size ≤ (21 : ℕ) →     PEqualNP.TopForm.IsLeastAO x1 x2 →       PEqualNP.TopForm.TopForm x1 x2 →         (2 : ℕ) ≤ (PEqualNP.TopForm.junk x1 x2).card →           have x7 : Finset (Sym2 (Fin (11 : ℕ))) := PEqualNP.TopForm.Ustar x1 x2;           have x8 : ℕ := (2 : ℕ) * (PEqualNP.TopForm.centreless x1 x2).card + (PEqualNP.TopForm.junk x1 x2).card + (PEqualNP.TopForm.orN x1 x2 \ PEqualNP.TopForm.lam x1 x2).card;           ∀ x9 ≤ (2 : ℕ), x8 = x7.card + x9 → x8 < (2 : ℕ) * x7.card → [(1 : ℕ), (2 : ℕ), (3 : ℕ), (5 : ℕ), (8 : ℕ), (12 : ℕ), (16 : ℕ)].getD x9 (0 : ℕ) ≤ x7.card → ∀ (x14 : Finset (Fin (11 : ℕ))), x14.card = x9 + (5 : ℕ) → (∃ x16 ⊆ x14, x16.card = (4 : ℕ) ∧ ∀ x17 ∈ x16, ∀ x19 ∈ x16, ¬x1.Adj x17 x19) → ∃ x17 ∈ x14, ∃ x18 ∈ x14, x1.Adj x17 x18 ∧ s(x17, x18) ∉ x7) := by
+  intro _ x2 hSz hLeast hTF hJ2 _ _ x9 hLe2 hEq _ hGet x14 hCard hInd
+  exact Or.elim (Nat.eq_zero_or_pos x9)
+    (fun h0 => by
+      cases h0
+      exact hDiff0 x2 hSz hLeast hTF hJ2 hEq hGet x14 hCard hInd)
+    (fun hPos =>
+      Or.elim (Nat.eq_or_lt_of_le (Nat.succ_le_of_lt hPos))
+        (fun h1 => by
+          cases h1
+          exact hDiff1 x2 hSz hLeast hTF hJ2 hEq hGet x14 hCard hInd)
+        (fun hGt1 => by
+          have h2 : x9 = (2 : ℕ) := Nat.le_antisymm hLe2 hGt1
+          cases h2
+          exact hDiff2 x2 hSz hLeast hTF hJ2 hEq hGet x14 hCard hInd))

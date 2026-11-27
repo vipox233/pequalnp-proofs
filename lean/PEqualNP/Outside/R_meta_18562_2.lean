@@ -1,0 +1,28 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_18562_2
+    (hFirst4 :
+      ∀ (x1 : Fin (11 : ℕ)) (x2 : PEqualNP.CircuitLowerBounds.Circuit),
+        ↑x1 < (4 : ℕ) →
+        PEqualNP.TopForm.IsAO2 (10 : ℕ) x2 →
+        x2.size ≤ (12 : ℕ) →
+        ∀ x6 ∈ [(16909538860378144768 : ℕ), (16909539410841305088 : ℕ), (16927600263721314816 : ℕ), (17213020425657819296 : ℕ)],
+          ∀ (x8 : Fin (6 : ℕ) → Fin ((10 : ℕ) + x2.size)),
+            ∃ (x9 : Fin (10 : ℕ) → Bool),
+              x6.testBit (∑ x10 : Fin (6 : ℕ), if (x2.wires (List.ofFn x9)).getD (↑(x8 x10)) Bool.false = Bool.true then [(1 : ℕ), (2 : ℕ), (4 : ℕ), (8 : ℕ), (16 : ℕ), (32 : ℕ)].getD ↑x10 (0 : ℕ) else (0 : ℕ)) ≠
+                have x10 : Fin (11 : ℕ) → Bool := x1.insertNth Bool.false x9;
+                [(9 : ℕ), (10 : ℕ), (15 : ℕ), (19 : ℕ), (27 : ℕ), (32 : ℕ), (39 : ℕ), (40 : ℕ), (52 : ℕ), (54 : ℕ), (63 : ℕ), (64 : ℕ), (73 : ℕ), (76 : ℕ), (86 : ℕ), (97 : ℕ)].any fun (x11 : ℕ) => x10 (Fin.ofNat (11 : ℕ) (x11 / (11 : ℕ))) && x10 (Fin.ofNat (11 : ℕ) (x11 % (11 : ℕ))))
+    (hLast3 :
+      ∀ (x1 : Fin (11 : ℕ)) (x2 : PEqualNP.CircuitLowerBounds.Circuit),
+        ↑x1 < (4 : ℕ) →
+        PEqualNP.TopForm.IsAO2 (10 : ℕ) x2 →
+        x2.size ≤ (12 : ℕ) →
+        ∀ x6 ∈ [(17215830820325998784 : ℕ), (17216961118282247904 : ℕ), (18374403832151997952 : ℕ)],
+          ∀ (x8 : Fin (6 : ℕ) → Fin ((10 : ℕ) + x2.size)),
+            ∃ (x9 : Fin (10 : ℕ) → Bool),
+              x6.testBit (∑ x10 : Fin (6 : ℕ), if (x2.wires (List.ofFn x9)).getD (↑(x8 x10)) Bool.false = Bool.true then [(1 : ℕ), (2 : ℕ), (4 : ℕ), (8 : ℕ), (16 : ℕ), (32 : ℕ)].getD ↑x10 (0 : ℕ) else (0 : ℕ)) ≠
+                have x10 : Fin (11 : ℕ) → Bool := x1.insertNth Bool.false x9;
+                [(9 : ℕ), (10 : ℕ), (15 : ℕ), (19 : ℕ), (27 : ℕ), (32 : ℕ), (39 : ℕ), (40 : ℕ), (52 : ℕ), (54 : ℕ), (63 : ℕ), (64 : ℕ), (73 : ℕ), (76 : ℕ), (86 : ℕ), (97 : ℕ)].any fun (x11 : ℕ) => x10 (Fin.ofNat (11 : ℕ) (x11 / (11 : ℕ))) && x10 (Fin.ofNat (11 : ℕ) (x11 % (11 : ℕ)))) :
+    (∀ (x1 : Fin (11 : ℕ)) (x2 : PEqualNP.CircuitLowerBounds.Circuit),   ↑x1 < (4 : ℕ) →     PEqualNP.TopForm.IsAO2 (10 : ℕ) x2 →       x2.size ≤ (12 : ℕ) →         ∀ x6 ∈ [(16909538860378144768 : ℕ), (16909539410841305088 : ℕ), (16927600263721314816 : ℕ), (17213020425657819296 : ℕ), (17215830820325998784 : ℕ), (17216961118282247904 : ℕ), (18374403832151997952 : ℕ)],           ∀ (x8 : Fin (6 : ℕ) → Fin ((10 : ℕ) + x2.size)),             ∃ (x9 : Fin (10 : ℕ) → Bool),               x6.testBit (∑ x10 : Fin (6 : ℕ), if (x2.wires (List.ofFn x9)).getD (↑(x8 x10)) Bool.false = Bool.true then [(1 : ℕ), (2 : ℕ), (4 : ℕ), (8 : ℕ), (16 : ℕ), (32 : ℕ)].getD ↑x10 (0 : ℕ) else (0 : ℕ)) ≠                 have x10 : Fin (11 : ℕ) → Bool := x1.insertNth Bool.false x9;                 [(9 : ℕ), (10 : ℕ), (15 : ℕ), (19 : ℕ), (27 : ℕ), (32 : ℕ), (39 : ℕ), (40 : ℕ), (52 : ℕ), (54 : ℕ), (63 : ℕ), (64 : ℕ), (73 : ℕ), (76 : ℕ), (86 : ℕ), (97 : ℕ)].any fun (x11 : ℕ) => x10 (Fin.ofNat (11 : ℕ) (x11 / (11 : ℕ))) && x10 (Fin.ofNat (11 : ℕ) (x11 % (11 : ℕ)))) :=
+  fun x1 x2 hLt hAO hSz x6 hMem =>
+    (List.mem_append.mp hMem).elim (hFirst4 x1 x2 hLt hAO hSz x6) (hLast3 x1 x2 hLt hAO hSz x6)

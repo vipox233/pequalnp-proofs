@@ -1,0 +1,50 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_17495_2
+    (hX3Input : ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x2 x3 : ℕ),
+      PEqualNP.MetaComplexity.Monotone2 x1 →
+        PEqualNP.MetaComplexity.NestedCover.ReadsBack (26 : ℕ) x1 →
+          x2 < (26 : ℕ) + x1.size →
+            x3 < (26 : ℕ) →
+              (∀ x8 ∈ x1.gates, x2 ∉ x8.inputs ∧ x3 ∉ x8.inputs) →
+                have x9 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))};
+                have x10 : Fin (13 : ℕ) → Fin (13 : ℕ) → List Bool := fun (x10 x11 : Fin (13 : ℕ)) => (List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 = x10)) ++ List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 = x11);
+                have x11 : Finset (Fin (13 : ℕ)) → List Bool := fun (x11 : Finset (Fin (13 : ℕ))) => (List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 ∈ x11)) ++ List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (∀ x13 ∈ x11, x13 - x12 ∉ x9);
+                have x12 : Finset (Fin (13 : ℕ)) → Prop := fun (x12 : Finset (Fin (13 : ℕ))) => x12.card = (4 : ℕ) ∧ ∀ (x13 : Fin (13 : ℕ)), ∃ (a b : Fin (13 : ℕ)), ∀ x14 ∈ x12, x14 - x13 ∈ x9 → x14 = a ∨ x14 = b;
+                have x13 : ℕ → List Bool → Bool := fun (x13 : ℕ) (x14 : List Bool) => (x1.wires x14).getD x13 Bool.false;
+                (∀ (x14 x15 : Fin (13 : ℕ)), x14 - x15 ∈ x9 → x13 x2 (x10 x14 x15) = Bool.true ∨ x13 x3 (x10 x14 x15) = Bool.true) →
+                  (∀ (x15 : Finset (Fin (13 : ℕ))), x12 x15 → x13 x2 (x11 x15) = Bool.false ∧ x13 x3 (x11 x15) = Bool.false) →
+                    (∃ (x16 : Fin (13 : ℕ)) (x17 : Fin (13 : ℕ)), x16 - x17 ∈ x9 ∧ x13 x2 (x10 x16 x17) = Bool.true ∧ x13 x3 (x10 x16 x17) = Bool.false) →
+                      (∃ (x17 : Fin (13 : ℕ)) (x18 : Fin (13 : ℕ)), x17 - x18 ∈ x9 ∧ x13 x3 (x10 x17 x18) = Bool.true ∧ x13 x2 (x10 x17 x18) = Bool.false) →
+                        (PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x1.size - (1 : ℕ))).op = PEqualNP.CircuitLowerBounds.GateOp.or → (63 : ℕ) ≤ x1.size)
+    (hX3Gate : ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x2 x3 : ℕ),
+      PEqualNP.MetaComplexity.Monotone2 x1 →
+        PEqualNP.MetaComplexity.NestedCover.ReadsBack (26 : ℕ) x1 →
+          x2 < (26 : ℕ) + x1.size →
+            (26 : ℕ) ≤ x3 →
+              x3 < (26 : ℕ) + x1.size →
+                (∀ x8 ∈ x1.gates, x2 ∉ x8.inputs ∧ x3 ∉ x8.inputs) →
+                  have x9 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))};
+                  have x10 : Fin (13 : ℕ) → Fin (13 : ℕ) → List Bool := fun (x10 x11 : Fin (13 : ℕ)) => (List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 = x10)) ++ List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 = x11);
+                  have x11 : Finset (Fin (13 : ℕ)) → List Bool := fun (x11 : Finset (Fin (13 : ℕ))) => (List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 ∈ x11)) ++ List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (∀ x13 ∈ x11, x13 - x12 ∉ x9);
+                  have x12 : Finset (Fin (13 : ℕ)) → Prop := fun (x12 : Finset (Fin (13 : ℕ))) => x12.card = (4 : ℕ) ∧ ∀ (x13 : Fin (13 : ℕ)), ∃ (a b : Fin (13 : ℕ)), ∀ x14 ∈ x12, x14 - x13 ∈ x9 → x14 = a ∨ x14 = b;
+                  have x13 : ℕ → List Bool → Bool := fun (x13 : ℕ) (x14 : List Bool) => (x1.wires x14).getD x13 Bool.false;
+                  (∀ (x14 x15 : Fin (13 : ℕ)), x14 - x15 ∈ x9 → x13 x2 (x10 x14 x15) = Bool.true ∨ x13 x3 (x10 x14 x15) = Bool.true) →
+                    (∀ (x15 : Finset (Fin (13 : ℕ))), x12 x15 → x13 x2 (x11 x15) = Bool.false ∧ x13 x3 (x11 x15) = Bool.false) →
+                      (∃ (x16 : Fin (13 : ℕ)) (x17 : Fin (13 : ℕ)), x16 - x17 ∈ x9 ∧ x13 x2 (x10 x16 x17) = Bool.true ∧ x13 x3 (x10 x16 x17) = Bool.false) →
+                        (∃ (x17 : Fin (13 : ℕ)) (x18 : Fin (13 : ℕ)), x17 - x18 ∈ x9 ∧ x13 x3 (x10 x17 x18) = Bool.true ∧ x13 x2 (x10 x17 x18) = Bool.false) →
+                          (PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x1.size - (1 : ℕ))).op = PEqualNP.CircuitLowerBounds.GateOp.or → (63 : ℕ) ≤ x1.size) :
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x2 x3 : ℕ),   PEqualNP.MetaComplexity.Monotone2 x1 →     PEqualNP.MetaComplexity.NestedCover.ReadsBack (26 : ℕ) x1 →       x2 < (26 : ℕ) + x1.size →         x3 < (26 : ℕ) + x1.size →           (∀ x8 ∈ x1.gates, x2 ∉ x8.inputs ∧ x3 ∉ x8.inputs) →             have x9 : Finset (Fin (13 : ℕ)) := {(0 : Fin (13 : ℕ)), (1 : Fin (13 : ℕ)), (3 : Fin (13 : ℕ)), (9 : Fin (13 : ℕ))};             have x10 : Fin (13 : ℕ) → Fin (13 : ℕ) → List Bool := fun (x10 x11 : Fin (13 : ℕ)) => (List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 = x10)) ++ List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 = x11);             have x11 : Finset (Fin (13 : ℕ)) → List Bool := fun (x11 : Finset (Fin (13 : ℕ))) => (List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (x12 ∈ x11)) ++ List.ofFn fun (x12 : Fin (13 : ℕ)) => Decidable.decide (∀ x13 ∈ x11, x13 - x12 ∉ x9);             have x12 : Finset (Fin (13 : ℕ)) → Prop := fun (x12 : Finset (Fin (13 : ℕ))) => x12.card = (4 : ℕ) ∧ ∀ (x13 : Fin (13 : ℕ)), {x14 ∈ x12 | x14 - x13 ∈ x9}.card ≤ (2 : ℕ);             have x13 : ℕ → List Bool → Bool := fun (x13 : ℕ) (x14 : List Bool) => (x1.wires x14).getD x13 Bool.false;             (∀ (x14 x15 : Fin (13 : ℕ)), x14 - x15 ∈ x9 → x13 x2 (x10 x14 x15) = Bool.true ∨ x13 x3 (x10 x14 x15) = Bool.true) → (∀ (x15 : Finset (Fin (13 : ℕ))), x12 x15 → x13 x2 (x11 x15) = Bool.false ∧ x13 x3 (x11 x15) = Bool.false) → (∃ (x16 : Fin (13 : ℕ)) (x17 : Fin (13 : ℕ)), x16 - x17 ∈ x9 ∧ x13 x2 (x10 x16 x17) = Bool.true ∧ x13 x3 (x10 x16 x17) = Bool.false) → (∃ (x17 : Fin (13 : ℕ)) (x18 : Fin (13 : ℕ)), x17 - x18 ∈ x9 ∧ x13 x3 (x10 x17 x18) = Bool.true ∧ x13 x2 (x10 x17 x18) = Bool.false) → (PEqualNP.MetaComplexity.NestedCover.gateAt x1 (x1.size - (1 : ℕ))).op = PEqualNP.CircuitLowerBounds.GateOp.or → (63 : ℕ) ≤ x1.size) :=
+  fun x1 x2 x3 hm hrb hx2 hx3 hdead hcov hneg he1 he2 hand =>
+    let hneg' := fun s hs =>
+      hneg s ⟨hs.1, fun x13 =>
+        Exists.elim (hs.2 x13) fun a ha =>
+        Exists.elim ha fun b hab =>
+          Nat.le_trans
+            (Finset.card_le_card fun y hy =>
+              let hy' := Finset.mem_filter.mp hy
+              Finset.mem_insert.mpr (Or.imp_right Finset.mem_singleton.mpr (hab y hy'.1 hy'.2)))
+            Finset.card_le_two⟩
+    Or.elim (Nat.lt_or_ge x3 (26 : ℕ))
+      (fun hlt => hX3Input x1 x2 x3 hm hrb hx2 hlt hdead hcov hneg' he1 he2 hand)
+      (fun hge => hX3Gate x1 x2 x3 hm hrb hx2 hge hx3 hdead hcov hneg' he1 he2 hand)
