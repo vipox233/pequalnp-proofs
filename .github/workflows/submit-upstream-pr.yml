@@ -29,6 +29,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import base64
+          import hashlib
           import json
           import os
           import re
@@ -120,6 +121,41 @@ jobs:
                   raise RuntimeError("An open PR already uses this proof branch")
               return None
           
+          def account_existing(unit):
+              # Queue ledger first: durable across different branches and search-index delay.
+              status, items = contents(ROOT + "/results")
+              if status == 200:
+                  for item in items:
+                      name = item.get("name", "")
+                      if not name.startswith(unit + "-") or not name.endswith(".json"):
+                          continue
+                      _, saved = read_json(ROOT + "/results/" + name)
+                      n = saved.get("pr")
+                      if type(n) is not int:
+                          continue
+                      _, pr = gh("/repos/" + UPSTREAM + "/pulls/" + str(n), token=PAT)
+                      if pr.get("title") == unit and pr.get("user", {}).get("login") == "vipox233" and (pr.get("state") == "open" or pr.get("merged_at")):
+                          return pr
+              # Independent legacy PRs may not have a queue receipt.
+              q = 'repo:' + UPSTREAM + ' is:pr author:vipox233 in:title "' + unit + '"'
+              _, search = gh("/search/issues?" + query(q=q, per_page=100), token=PAT)
+              require(not search.get("incomplete_results") and search.get("total_count", 0) <= 100,
+                      "Account PR lookup incomplete; retry instead of sending a duplicate")
+              for item in search.get("items", []):
+                  if item.get("title") != unit or item.get("user", {}).get("login") != "vipox233":
+                      continue
+                  _, pr = gh("/repos/" + UPSTREAM + "/pulls/" + str(item["number"]), token=PAT)
+                  if pr.get("state") == "open" or pr.get("merged_at"):
+                      return pr
+              return None
+
+          def proof_hash(b):
+              return hashlib.sha256(b).hexdigest()
+
+          def gap_hash(g):
+              data = {k: g.get(k) for k in ("id","statement","file","module","imports","kind","template","value_max","refutation")}
+              return proof_hash(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
+
           def process(q):
               require(isinstance(q, dict), "Request must be a JSON object")
               unit, branch, head, file, lease = (q.get(k) for k in ("unit", "branch", "head_sha", "file", "lease"))
@@ -129,9 +165,21 @@ jobs:
               require(match(r"[0-9a-f]{40}", head), "Invalid proof head SHA")
               require(match(r"lean/PEqualNP/Outside/[LV]_[A-Za-z0-9_]+\.lean", file), "Invalid proof path")
               require(match(r"[A-Za-z0-9-]{1,64}", lease), "Invalid lease")
+              enhanced = any(k in q for k in ("proof_sha256", "base_sha", "statement_hash"))
+              if enhanced:
+                  require(match(r"[a-f0-9]{64}", q.get("proof_sha256")) and match(r"[a-f0-9]{64}", q.get("statement_hash"))
+                          and match(r"[a-f0-9]{40}", q.get("base_sha")), "Invalid validation receipt")
               pr = existing(unit, branch, head)
-              if pr is not None and pr["state"] == "closed" and not pr.get("merged_at"):
-                  return {"status": "SKIPPED", "reason": "Matching PR was closed", "pr_url": pr["html_url"]}
+              if pr is not None:
+                  if pr["state"] == "closed" and not pr.get("merged_at"):
+                      return {"status": "SKIPPED", "reason": "Matching PR was closed", "pr_url": pr["html_url"]}
+                  # An existing same-head PR is already a durable submission; avoid another release.
+                  return {"status": "SUBMITTED", "pr": pr["number"], "pr_url": pr["html_url"],
+                          "head_sha": head, "already_exists": True, "lease_released": None}
+              duplicate = account_existing(unit)
+              if duplicate is not None:
+                  return {"status": "DUPLICATE", "reason": "Account already has an open or merged PR for this unit",
+                          "pr": duplicate["number"], "pr_url": duplicate["html_url"], "existing_head_sha": duplicate["head"]["sha"]}
               if pr is None:
                   status, _ = gh("/repos/" + UPSTREAM + "/contents/STOP?ref=main",
                                  token=PAT, expected=(200, 404))
@@ -143,12 +191,20 @@ jobs:
                   _, diff = gh(cmp_path, token=PAT)
                   require(diff.get("ahead_by") == 1 and len(diff.get("commits", [])) == 1
                           and diff["commits"][0]["sha"] == head, "PR must contain exactly one proof commit")
+                  if enhanced:
+                      parents = diff["commits"][0].get("parents", [])
+                      require(len(parents) == 1 and parents[0].get("sha") == q["base_sha"],
+                              "Proof commit parent differs from validated base SHA")
                   files = diff.get("files", [])
                   require(len(files) == 1 and files[0]["status"] == "added"
                           and files[0]["filename"] == file, "PR must add exactly the declared Lean file")
                   status, proof = contents(file, head)
                   require(status == 200 and proof.get("type") == "file"
                           and 0 < proof.get("size", 0) <= 524288, "Invalid proof file size or type")
+                  if enhanced:
+                      require(proof.get("encoding") == "base64", "Cannot verify proof bytes")
+                      require(proof_hash(base64.b64decode(proof["content"])) == q["proof_sha256"],
+                              "Committed proof hash differs from validated bytes")
                   status, row = request(ROW + "?" + query(gap=unit))
                   require(status == 200 and isinstance(row, dict), "Cannot read authoritative task row")
                   candidates = [g for g in row.get("gaps", []) if g.get("id") == unit]
@@ -156,6 +212,8 @@ jobs:
                       return {"status": "SKIPPED", "reason": "Unit no longer open"}
                   require(len(candidates) == 1, "Ambiguous authoritative task row")
                   gap = candidates[0]
+                  if enhanced:
+                      require(gap_hash(gap) == q["statement_hash"], "Authority statement differs from validation receipt")
                   if gap.get("kind") == "value":
                       stem = "lean/PEqualNP/Outside/V_" + unit[2:].replace("-", "_")
                       m = re.fullmatch(re.escape(stem) + r"__k(0|[1-9][0-9]*)\.lean", file)
@@ -174,11 +232,20 @@ jobs:
                       require(status in (200, 201, 204), "Racing submission requires an active lease")
                   _, info = gh("/repos/" + FORK + "/branches/" + urlq(branch))
                   require(info["commit"]["sha"] == head, "Proof branch changed before submission")
+                  duplicate = account_existing(unit)
+                  if duplicate is not None:
+                      return {"status": "DUPLICATE", "reason": "Account already has an open or merged PR for this unit",
+                              "pr": duplicate["number"], "pr_url": duplicate["html_url"], "existing_head_sha": duplicate["head"]["sha"]}
                   payload = {"title": unit, "body": "Lease: " + lease, "head": "vipox233:" + branch,
                              "base": "main", "maintainer_can_modify": True}
                   status, pr = gh("/repos/" + UPSTREAM + "/pulls", "POST", payload, PAT, (201, 422))
                   if status == 422:
                       pr = existing(unit, branch, head)
+                      if pr is None:
+                          duplicate = account_existing(unit)
+                          if duplicate is not None:
+                              return {"status": "DUPLICATE", "reason": "Account PR appeared during creation",
+                                      "pr": duplicate["number"], "pr_url": duplicate["html_url"], "existing_head_sha": duplicate["head"]["sha"]}
                       require(pr is not None, "PR creation rejected: HTTP 422")
               require(pr["head"]["sha"] == head and pr["title"] == unit, "PR head or title differs from request")
               # A created PR is a durable result even if the release call has a transient failure.
