@@ -10,6 +10,8 @@
 //   node outside-guard.mjs imports <lean file> <imports.json> <file path in the pull request> [kind]
 //   node outside-guard.mjs closure <base dir> <imports.json> <judged file path> <out dir> [kind]
 //   node outside-guard.mjs number <file path> <base dir> <open.json> <pr number>   (a reduction's k is free)
+//   node outside-guard.mjs claims <file path> <claims json> <out open.json>   (the intake's open claims, whole or refused)
+//       (each claim's author is sha256 of the lowercased login cut to 12 lowercase hex, or null: never the login itself)
 //
 // KINDS. A proof (check) or a refutation (refute) of a posted step S is the file of its gap row,
 // lean/PEqualNP/Outside/L_<gap>.lean. A REDUCTION of S (kind reduce, ships dark) is
@@ -139,7 +141,8 @@ export function checkPr(pr, files, tree, repo, defaultBranch) {
 // open pull requests (its earliest ones by number); the rest of its claims hold nothing, so one account opening ten
 // pull requests on a step blocks three numbers, not ten. An entry with no author counts as one account of its own.
 //   onBase: the file names in the base's lean/PEqualNP/Outside; open: the API's open pull requests as
-//   [{ number, createdAt, author, files: [path] }] (read whole, or refused before this); pr: this pull request's number.
+//   [{ number, createdAt, author, files: [path] }] (the intake's, accepted whole by checkClaims, or refused before this);
+//   pr: this pull request's number.
 export const STALE_HOURS = 48;
 export const MAX_HELD = 3;
 const R_PARTS_RE = /^(?:lean\/PEqualNP\/Outside\/)?(R_[a-z0-9_]+)_([1-9][0-9]{0,2})\.lean$/;
@@ -176,6 +179,38 @@ export function checkCutNumber(file, onBase, open, pr, now = Date.now()) {
   const where = onMain.has(k) ? 'is already a file on main' : 'is the file of an earlier open pull request';
   const next = free ? `send the same proof as ${stem}_${free}.lean with the theorem PEqualNP.Outside.${stem}_${free} (the smallest number free on main and in open pull requests), and it is judged` : 'every number from 1 to 999 is in use for this step';
   refuse(`the reduction number ${k} of this step ${where}, so this file could never be merged; ${next}. You did nothing wrong`);
+}
+
+// THE OPEN CLAIMS FROM THE INTAKE (2026-11-26): the open pull requests that can claim a k of this step reach the run
+// as a dispatch input the intake writes (it holds the whole open list with each one's files, refreshed every minute,
+// and it alone starts the run), already cut to this step and the stale window. Taken whole or not at all: a JSON list
+// of at most MAX_CLAIMS entries, each exactly { number, createdAt, author, files }, number a pull request number (no
+// two alike), createdAt an ISO time in UTC, author the intake's 12-hex hash of the sender or null (red team C2: a login
+// is a stranger's text and the input is public on the run's page; the count of three per account needs only equality),
+// files 1 to 3 reduction files of THIS step. Anything else refuses the whole list (the workflow then ends as a FAULT), so a list that was cut wrong is never half used.
+export const MAX_CLAIMS = 150;
+const AUTHOR_HASH_RE = /^[0-9a-f]{12}$/;
+const ISO_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?Z$/;
+export function checkClaims(v, file) {
+  const m = R_PARTS_RE.exec(file ?? '');
+  if (!m || !R_FILE_RE.test(file)) refuse('the open claims are for a reduction file R_<gap>_<n>.lean only');
+  if (!Array.isArray(v)) refuse('the open claims are not a JSON list');
+  if (v.length > MAX_CLAIMS) refuse(`the open claims hold more than ${MAX_CLAIMS} entries`);
+  const seen = new Set();
+  return v.map((o, i) => {
+    const at = `open claim ${i + 1}`;
+    if (!o || typeof o !== 'object' || Array.isArray(o) || Object.keys(o).sort().join() !== 'author,createdAt,files,number') refuse(`${at} is not exactly { number, createdAt, author, files }`);
+    if (!Number.isInteger(o.number) || o.number < 1 || o.number > 9999999 || seen.has(o.number)) refuse(`${at} has a malformed or repeated number`);
+    seen.add(o.number);
+    if (typeof o.createdAt !== 'string' || !ISO_RE.test(o.createdAt) || !Number.isFinite(Date.parse(o.createdAt))) refuse(`${at} has a malformed time`);
+    if (o.author !== null && (typeof o.author !== 'string' || !AUTHOR_HASH_RE.test(o.author))) refuse(`${at} has a malformed author`);
+    if (!Array.isArray(o.files) || o.files.length < 1 || o.files.length > 3) refuse(`${at} must list 1 to 3 files`);
+    for (const f of o.files) {
+      const q = R_PARTS_RE.exec(typeof f === 'string' ? f : '');
+      if (!q || !R_FILE_RE.test(f) || q[1] !== m[1]) refuse(`${at} lists a file that is not a reduction file of this step`);
+    }
+    return { number: o.number, createdAt: o.createdAt, author: o.author, files: [...o.files] };
+  });
 }
 
 // The gap as the desk posts it. Its file must be the file of the pull request; for a reduction,
@@ -631,6 +666,15 @@ const main = () => {
     if (!R_FILE_RE.test(file)) refuse('the number check is for a reduction file R_<gap>_<n>.lean only');
     const r = checkCutNumber(file, names, json(openPath), Number(prs));
     process.stdout.write(`the reduction number ${r.k} is free on main and in earlier open pull requests\n`);
+  } else if (cmd === 'claims' && a.length === 3) {
+    // node outside-guard.mjs claims <file path> <claims json> <out open.json>
+    const [file, inPath, outPath] = a;
+    const raw = (() => { try { return readFileSync(inPath, 'utf8'); } catch { return refuse('the open claims could not be read'); } })();
+    if (raw.length > 40000) refuse('the open claims are longer than 40000 characters');
+    let v; try { v = JSON.parse(raw); } catch { refuse('the open claims are not JSON'); }
+    const claims = checkClaims(v, file);
+    writeFileSync(outPath, JSON.stringify(claims));
+    process.stdout.write(`open claims of this step from the intake: ${claims.length}\n`);
   } else if (cmd === 'imports' && (a.length === 3 || a.length === 4)) {
     checkFileKind(a[2], a[3]);
     const bytes = readFileSync(a[0]);
@@ -654,7 +698,7 @@ const main = () => {
     put(out, 'outside-sources.txt', r.outside.map((m) => `base/lean/${m.split('.').join('/')}.lean\n`).join(''));
     process.stdout.write(`built before the locked step: ${r.base.join(' ') || '(none)'}\noutside-written, built only in the locked step: ${r.outside.join(' ') || '(none)'}\n`);
   } else {
-    process.stderr.write('usage: outside-guard.mjs pr|gap|gap-of-file|imports|closure|number ... (see the header)\n');
+    process.stderr.write('usage: outside-guard.mjs pr|gap|gap-of-file|imports|closure|number|claims ... (see the header)\n');
     process.exit(3);
   }
   // ONE FIXED LAST LINE ON SUCCESS (2026-11-26): the workflows require it after every call, so a silent exit 0 is

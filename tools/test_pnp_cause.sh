@@ -85,6 +85,16 @@ printf '{"id": "MONDO:10526"}' > "$t/a.json"; run --cause raredx answer "$U1" "$
 printf '{"id": "HGNC:6342"}' > "$t/a.json"; run --cause raredx answer "$U1" "$t/a.json"; [ "$rc" = 1 ] && grep -q 'a disease takes an id of MONDO, ORPHA' "$t/err" || fail "a gene id for a disease mention was not refused"
 printf '{"id": "MONDO:0010526", "why": "x"}' > "$t/a.json"; run --cause raredx answer "$U1" "$t/a.json"; [ "$rc" = 1 ] && grep -q 'is not a field' "$t/err" || fail "an extra field was not refused"
 printf '{"id": NaN}' > "$t/a.json"; run --cause raredx answer "$U1" "$t/a.json"; [ "$rc" = 1 ] && grep -q 'not strict JSON' "$t/err" || fail "NaN was not refused"
+# EXACTLY the pinned ontologies per kind, the same as the desk's RX_EXPECT (26 Nov 20:15Z; the pnp red team): a kind
+# with none (pathway, phenotype) takes no answer; the help names only the pinned ones.
+python3 -I - "$script" <<'PY' || fail "the LINK ontology lists are not exactly the pinned ones"
+import re, sys, json
+src = open(sys.argv[1], encoding="utf-8").read()
+exp = json.loads(re.search(r'^EXPECT = (\{.*\})$', src, re.M).group(1))
+assert exp == {"disease": ["MONDO", "ORPHA"], "drug": ["CHEMBL", "UNII", "RXCUI"], "target": ["UNIPROT"], "pathway": [], "phenotype": []}, exp
+assert "HGNC, UNIPROT or ENSEMBL" not in src and "DRUGCENTRAL, UNII or RXCUI" not in src and "a pathway REACTOME or GO" not in src
+assert "takes no answer today: no %s ontology is pinned" in src
+PY
 [ ! -s "$t/desk/log" ] || fail "a refused answer reached the desk: $(cat "$t/desk/log")"
 printf '{"id": "MONDO:0010526"}\n' > "$t/a.json"; run --cause raredx answer "$U1" "$t/a.json"; [ "$rc" = 0 ] && grep -q '^answered' "$t/out" || fail "a good answer"
 grep -q '^POST /raredx/answer?lease=lease-1$' "$t/desk/log" || fail "the answer went to the wrong door: $(cat "$t/desk/log")"

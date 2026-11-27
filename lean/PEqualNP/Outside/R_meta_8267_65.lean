@@ -1,0 +1,11 @@
+import PEqualNP.Defs
+
+set_option maxHeartbeats 2000000 in
+theorem PEqualNP.Outside.R_meta_8267_65
+    (caseA : let x1 : Type := Fin (42 : ℕ); let x2 : Type := x1 × x1; have x3 : Set x2 := {x3 : x2 | ↑x3.1 < (21 : ℕ) ∧ (21 : ℕ) ≤ ↑x3.2 ∧ (↑x3.2 + (21 : ℕ) - ↑x3.1) % (21 : ℕ) ∈ [(0 : ℕ), (5 : ℕ), (7 : ℕ), (17 : ℕ), (20 : ℕ)]}; have x4 : Set (Set x2) → Set x2 × Set x2 → Set (Set x2) := fun (x4 : Set (Set x2)) (x5 : Set x2 × Set x2) => {x6 : Set x2 | x6 ∈ x4 ∨ x5.1 ∈ x4 ∧ x5.2 ∈ x4 ∧ x6 ⊆ x5.1 ∪ x5.2}; have x5 : Set x1 → Set (Set x2) := fun (x5 : Set x1) => {x6 : Set x2 | x6 = ∅ ∨ ∃ x7 ∈ x5, ∀ x8 ∈ x6, x8.1 = x7 ∨ x8.2 = x7}; ∀ (x6 : List (Set x2 × Set x2)), x6.length < (3 : ℕ) → (∀ (x7 : Set x1), (∀ x8 ∈ x3, x8.1 ∈ x7 ∨ x8.2 ∈ x7) → x3 ∈ List.foldl x4 (x5 x7) x6) → (104 : ℕ) ≤ x6.length)
+    (caseB : let x1 : Type := Fin (42 : ℕ); let x2 : Type := x1 × x1; have x3 : Set x2 := {x3 : x2 | ↑x3.1 < (21 : ℕ) ∧ (21 : ℕ) ≤ ↑x3.2 ∧ (↑x3.2 + (21 : ℕ) - ↑x3.1) % (21 : ℕ) ∈ [(0 : ℕ), (5 : ℕ), (7 : ℕ), (17 : ℕ), (20 : ℕ)]}; have x4 : Set (Set x2) → Set x2 × Set x2 → Set (Set x2) := fun (x4 : Set (Set x2)) (x5 : Set x2 × Set x2) => {x6 : Set x2 | x6 ∈ x4 ∨ x5.1 ∈ x4 ∧ x5.2 ∈ x4 ∧ x6 ⊆ x5.1 ∪ x5.2}; have x5 : Set x1 → Set (Set x2) := fun (x5 : Set x1) => {x6 : Set x2 | x6 = ∅ ∨ ∃ x7 ∈ x5, ∀ x8 ∈ x6, x8.1 = x7 ∨ x8.2 = x7}; ∀ (x6 : List (Set x2 × Set x2)), (3 : ℕ) ≤ x6.length → (∀ (x7 : Set x1), (∀ x8 ∈ x3, x8.1 ∈ x7 ∨ x8.2 ∈ x7) → x3 ∈ List.foldl x4 (x5 x7) x6) → (104 : ℕ) ≤ x6.length) :
+    let x1 : Type := Fin (42 : ℕ); let x2 : Type := x1 × x1; have x3 : Set x2 := {x3 : x2 | ↑x3.1 < (21 : ℕ) ∧ (21 : ℕ) ≤ ↑x3.2 ∧ (↑x3.2 + (21 : ℕ) - ↑x3.1) % (21 : ℕ) ∈ [(0 : ℕ), (5 : ℕ), (7 : ℕ), (17 : ℕ), (20 : ℕ)]}; have x4 : Set (Set x2) → Set x2 × Set x2 → Set (Set x2) := fun (x4 : Set (Set x2)) (x5 : Set x2 × Set x2) => {x6 : Set x2 | x6 ∈ x4 ∨ x5.1 ∈ x4 ∧ x5.2 ∈ x4 ∧ x6 ⊆ x5.1 ∪ x5.2}; have x5 : Set x1 → Set (Set x2) := fun (x5 : Set x1) => {x6 : Set x2 | x6 = ∅ ∨ ∃ x7 ∈ x5, ∀ x8 ∈ x6, x8.1 = x7 ∨ x8.2 = x7}; ∀ (x6 : List (Set x2 × Set x2)), (∀ (x7 : Set x1), (∀ x8 ∈ x3, x8.1 ∈ x7 ∨ x8.2 ∈ x7) → x3 ∈ List.foldl x4 (x5 x7) x6) → (104 : ℕ) ≤ x6.length := by
+  intro x1 x2 x3 x4 x5 x6
+  rcases Nat.lt_or_ge x6.length (3 : ℕ) with h | h
+  · exact @caseA x6 h
+  · exact @caseB x6 h

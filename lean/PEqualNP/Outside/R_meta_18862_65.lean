@@ -1,0 +1,11 @@
+import PEqualNP.Defs
+
+set_option maxHeartbeats 2000000 in
+theorem PEqualNP.Outside.R_meta_18862_65
+    (caseA : have x1 : Set (Set (Fin (26 : ℕ) → Bool)) := {∅, Set.univ} ∪ Set.range fun (x1 : Fin (26 : ℕ)) => {x2 : Fin (26 : ℕ) → Bool | x2 x1 = Bool.true}; ∀ (x2 : List (Set (Fin (26 : ℕ) → Bool))), x2.length < (3 : ℕ) → x2.length ≤ (62 : ℕ) → (∀ (x4 : ℕ) (x5 : Set (Fin (26 : ℕ) → Bool)), x2[x4]? = Option.some x5 → ∃ x7 ∈ x1 ∪ ↑(List.take x4 x2).toFinset, ∃ x8 ∈ x1 ∪ ↑(List.take x4 x2).toFinset, x5 = x7 ∩ x8 ∨ x5 = x7 ∪ x8) → ∀ x5 ∈ x1 ∪ ↑x2.toFinset, ∀ x7 ∈ x1 ∪ ↑x2.toFinset, x5 ∩ x7 ≠ {x9 : Fin (26 : ℕ) → Bool | ∃ (x10 : Fin (13 : ℕ)) (x11 : Fin (13 : ℕ)), (↑x10 + ↑x11) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)] ∧ x9 (Fin.castAdd (13 : ℕ) x10) = Bool.true ∧ x9 (Fin.natAdd (13 : ℕ) x11) = Bool.true})
+    (caseB : have x1 : Set (Set (Fin (26 : ℕ) → Bool)) := {∅, Set.univ} ∪ Set.range fun (x1 : Fin (26 : ℕ)) => {x2 : Fin (26 : ℕ) → Bool | x2 x1 = Bool.true}; ∀ (x2 : List (Set (Fin (26 : ℕ) → Bool))), (3 : ℕ) ≤ x2.length → x2.length ≤ (62 : ℕ) → (∀ (x4 : ℕ) (x5 : Set (Fin (26 : ℕ) → Bool)), x2[x4]? = Option.some x5 → ∃ x7 ∈ x1 ∪ ↑(List.take x4 x2).toFinset, ∃ x8 ∈ x1 ∪ ↑(List.take x4 x2).toFinset, x5 = x7 ∩ x8 ∨ x5 = x7 ∪ x8) → ∀ x5 ∈ x1 ∪ ↑x2.toFinset, ∀ x7 ∈ x1 ∪ ↑x2.toFinset, x5 ∩ x7 ≠ {x9 : Fin (26 : ℕ) → Bool | ∃ (x10 : Fin (13 : ℕ)) (x11 : Fin (13 : ℕ)), (↑x10 + ↑x11) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)] ∧ x9 (Fin.castAdd (13 : ℕ) x10) = Bool.true ∧ x9 (Fin.natAdd (13 : ℕ) x11) = Bool.true}) :
+    have x1 : Set (Set (Fin (26 : ℕ) → Bool)) := {∅, Set.univ} ∪ Set.range fun (x1 : Fin (26 : ℕ)) => {x2 : Fin (26 : ℕ) → Bool | x2 x1 = Bool.true}; ∀ (x2 : List (Set (Fin (26 : ℕ) → Bool))), x2.length ≤ (62 : ℕ) → (∀ (x4 : ℕ) (x5 : Set (Fin (26 : ℕ) → Bool)), x2[x4]? = Option.some x5 → ∃ x7 ∈ x1 ∪ ↑(List.take x4 x2).toFinset, ∃ x8 ∈ x1 ∪ ↑(List.take x4 x2).toFinset, x5 = x7 ∩ x8 ∨ x5 = x7 ∪ x8) → ∀ x5 ∈ x1 ∪ ↑x2.toFinset, ∀ x7 ∈ x1 ∪ ↑x2.toFinset, x5 ∩ x7 ≠ {x9 : Fin (26 : ℕ) → Bool | ∃ (x10 : Fin (13 : ℕ)) (x11 : Fin (13 : ℕ)), (↑x10 + ↑x11) % (13 : ℕ) ∈ [(0 : ℕ), (1 : ℕ), (3 : ℕ), (9 : ℕ)] ∧ x9 (Fin.castAdd (13 : ℕ) x10) = Bool.true ∧ x9 (Fin.natAdd (13 : ℕ) x11) = Bool.true} := by
+  intro x1 x2
+  rcases Nat.lt_or_ge x2.length (3 : ℕ) with h | h
+  · exact @caseA x2 h
+  · exact @caseB x2 h

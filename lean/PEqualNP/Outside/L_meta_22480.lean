@@ -1,0 +1,22 @@
+import PEqualNP.Defs
+
+open PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity
+
+namespace PEqualNP.Outside.L_meta_22480
+
+def circuit : Circuit := ⟨[⟨.or, [3, 4]⟩, ⟨.and, [0, 6]⟩, ⟨.or, [2, 4]⟩, ⟨.and, [1, 8]⟩, ⟨.and, [2, 3]⟩, ⟨.or, [7, 9]⟩, ⟨.or, [11, 10]⟩], 12⟩
+
+def legal (g : Gate) : Bool :=
+  (match g.op with | .and | .or | .not => true | _ => false) && decide (g.inputs.length ≤ 2)
+
+theorem legalCircuit : FanInTwo circuit := by
+  have ok : circuit.gates.all legal = true := by decide +kernel
+  intro g hg
+  have h := List.all_eq_true.mp ok g hg
+  cases e : g.op <;> simp [legal, e] at h ⊢ <;> first | assumption | simp_all
+
+end PEqualNP.Outside.L_meta_22480
+
+open PEqualNP.Outside.L_meta_22480 in
+theorem PEqualNP.Outside.L_meta_22480 : (∃ C : PEqualNP.CircuitLowerBounds.Circuit, PEqualNP.MetaComplexity.FanInTwo C ∧ C.size ≤ 7 ∧ ∀ i j : Fin 6, C.eval (List.ofFn fun k : Fin 6 => decide (k = i ∨ k = j)) = (34072 : ℕ).testBit (6 * min i.val j.val + max i.val j.val)) := by
+  exact ⟨circuit, legalCircuit, by decide, by decide +kernel⟩

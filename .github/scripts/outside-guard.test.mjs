@@ -614,6 +614,7 @@ import { ranAsScript } from './outside-guard.mjs';
 // THE NUMBER OF A REDUCTION (2026-11-26): k free on the base and in EARLIER open pull requests, else refused
 // at the door with the smallest free k named. Later and stale open pull requests do not count.
 import { checkCutNumber, STALE_HOURS, MAX_HELD } from './outside-guard.mjs';
+import { createHash } from 'node:crypto';
 {
   const F = (k) => `lean/PEqualNP/Outside/R_meta_4013_${k}.lean`;
   const now = Date.parse('2026-11-26T03:00:00Z');
@@ -660,5 +661,56 @@ import { checkCutNumber, STALE_HOURS, MAX_HELD } from './outside-guard.mjs';
     const r3 = cli('number', 'lean/PEqualNP/Outside/L_meta_4013.lean', d, pj(d, 'open.json'), '20');
     assert.equal(r3.status, 1); assert.match(r3.stdout, /^REFUSED: the number check is for a reduction file/); assert.doesNotMatch(r3.stdout, /GUARD OK/);
     assert.equal(cli('number', F(3), d, pj(d, 'open.json'), 'x').status, 1);
+  });
+  // THE OPEN CLAIMS FROM THE INTAKE (2026-11-26): the workflow's own lines for a reduction run, run here on a real
+  // base folder. No list call: the claims are the input open_claims. Absent or malformed is a FAULT, never a pass.
+  test('cut number: the open claims input, absent and malformed FAULT, a claimed k refused, a free k passes', () => {
+    const wfl = readFileSync(new URL('../workflows/authoritative.yml', import.meta.url), 'utf8');
+    assert.doesNotMatch(wfl, /graphql|pullRequests\(/, 'a list call is still made');
+    const lines = wfl.split('\n'); const i = lines.findIndex((l) => l.includes('[ -n "$OPEN_CLAIMS" ]')); const j = lines.findIndex((l) => l.includes('cat "$W/api/claims.out"'));
+    assert.ok(i > 0 && j > i, 'the open claims lines are not in the workflow'); const block = lines.slice(i, j + 1).join('\n');
+    const W = mkdtempSync(pj(tmpdir(), 'claims-')); spawnSync('mkdir', ['-p', pj(W, 'base', '.github'), pj(W, 'api'), pj(W, 'base', 'lean', 'PEqualNP', 'Outside')]);
+    spawnSync('ln', ['-s', new URL('.', import.meta.url).pathname, pj(W, 'base', '.github', 'scripts')]);
+    wf(pj(W, 'base', 'lean', 'PEqualNP', 'Outside', 'R_meta_4013_1.lean'), '');
+    const run = (claims, k = 3) => {
+      spawnSync('rm', ['-f', pj(W, 'api', 'open.json')]); wf(pj(W, 'pr.file'), F(k));
+      return spawnSync('bash', ['-euc', `mkdir -p "$W/in"; cp "$W/pr.file" "$W/in/pr.file"\n${block}`], { encoding: 'utf8', env: { PATH: process.env.PATH, W, OPEN_CLAIMS: claims } });
+    };
+    const last = (r) => r.stdout.trimEnd().split('\n').at(-1);
+    const recent = new Date(Date.now() - 3600e3).toISOString();
+    const h = (login) => createHash('sha256').update(login.toLowerCase()).digest('hex').slice(0, 12);   // the intake's author hash
+    let r = run('');
+    assert.equal(r.status, 1); assert.equal(last(r), 'FAULT: a reduction run needs the open claims from the intake (input open_claims) and none came; nothing was judged');
+    // C1: a quote, a dollar sign, a backtick and a newline: the fixed FAULT line, and nothing of it runs
+    r = run(`"'; touch "$W/pwned1"; $(touch "$W/pwned2") \`touch "$W/pwned3"\`\n[]`);
+    assert.equal(r.status, 1); assert.equal(last(r), 'FAULT: the open claims from the intake are malformed; nothing was judged');
+    for (const n of [1, 2, 3]) assert.throws(() => readFileSync(pj(W, `pwned${n}`)), `the input ran a command (${n})`);
+    for (const bad of ['not json', '{}', JSON.stringify([{ number: 400, createdAt: recent, author: h('a'), files: ['lean/PEqualNP/Outside/R_meta_40130_3.lean'] }]),
+      JSON.stringify([{ number: 400, createdAt: recent, author: 'someone', files: [F(3)] }]), JSON.stringify([{ number: 400, createdAt: recent, author: h('a').toUpperCase(), files: [F(3)] }]),
+      JSON.stringify([{ number: 400, createdAt: recent, author: createHash('sha256').update('a').digest('hex'), files: [F(3)] }]),
+      JSON.stringify([{ number: '400', createdAt: recent, author: h('a'), files: [F(3)] }]), JSON.stringify([{ number: 400, createdAt: recent, author: h('a'), files: [F(3)], extra: 1 }]),
+      JSON.stringify([{ number: 400, createdAt: 'yesterday', author: h('a'), files: [F(3)] }]), JSON.stringify([{ number: 400, createdAt: recent, author: h('a'), files: [] }]), 'x'.repeat(40001)]) {
+      r = run(bad);
+      assert.equal(r.status, 1, bad.slice(0, 80)); assert.match(last(r), /^FAULT: the open claims from the intake (are malformed|are longer than 40000 characters); nothing was judged$/, bad.slice(0, 80));
+      assert.throws(() => readFileSync(pj(W, 'api', 'open.json')), 'a refused list was written');
+    }
+    const claims = JSON.stringify([{ number: 400, createdAt: recent, author: h('a'), files: [F(3)] }, { number: 600, createdAt: recent, author: null, files: [F(4)] }]);
+    r = run(claims, 3);
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(last(r), 'GUARD OK: claims');
+    const g = cli('number', F(3), pj(W, 'base'), pj(W, 'api', 'open.json'), '500');
+    assert.equal(g.status, 1); assert.match(g.stdout, /^REFUSED: the reduction number 3 of this step is the file of an earlier open pull request.*R_meta_4013_2\.lean/);
+    r = run(claims, 5); assert.equal(r.status, 0, r.stdout);
+    assert.equal(cli('number', F(5), pj(W, 'base'), pj(W, 'api', 'open.json'), '500').status, 0, 'a free k did not pass');
+    r = run('[]', 3); assert.equal(r.status, 0, r.stdout); assert.equal(readFileSync(pj(W, 'api', 'open.json'), 'utf8'), '[]');
+    // three numbers per account with 12-hex authors: one hash on 2..5 holds 2, 3, 4; another hash's claim on 5 counts
+    const four = [2, 3, 4, 5].map((k, n) => ({ number: 100 + n, createdAt: recent, author: h('Hoarder'), files: [F(k)] }));
+    r = run(JSON.stringify(four), 5); assert.equal(r.status, 0, r.stdout);
+    assert.equal(cli('number', F(5), pj(W, 'base'), pj(W, 'api', 'open.json'), '500').status, 0, 'a fourth claim of one account held a number');
+    assert.match(cli('number', F(4), pj(W, 'base'), pj(W, 'api', 'open.json'), '500').stdout, /^REFUSED: the reduction number 4 of this step is the file of an earlier open pull request/);
+    r = run(JSON.stringify([...four, { number: 104, createdAt: recent, author: h('other'), files: [F(5)] }]), 5); assert.equal(r.status, 0, r.stdout);
+    assert.match(cli('number', F(5), pj(W, 'base'), pj(W, 'api', 'open.json'), '500').stdout, /^REFUSED: the reduction number 5 of this step is the file of an earlier open pull request/);
+    // the bound: 100 open pull requests of one step, the longest step id, fit the 40000 characters
+    const stem = `R_${'a'.repeat(62)}`; const worst = Array.from({ length: 100 }, (_, n) => ({ number: 9000000 + n, createdAt: '2026-11-26T12:00:00.000Z', author: 'f'.repeat(12), files: [`lean/PEqualNP/Outside/${stem}_999.lean`] }));
+    assert.ok(JSON.stringify(worst).length <= 40000, `100 worst case claims are ${JSON.stringify(worst).length} characters`);
   });
 }

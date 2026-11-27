@@ -1,0 +1,10 @@
+import PEqualNP.Defs
+
+theorem PEqualNP.Outside.R_meta_18627_2
+    (hEq : ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x2 x3 : Fin (7 : ℕ)), x1.size = (27 : ℕ) → PEqualNP.TopForm.IsAO2 (14 : ℕ) x1 → (∀ x6 ∈ x1.gates, x6.inputs.Nodup) → PEqualNP.GenericRejection.ComputesIncidence PEqualNP.CircuitLowerBounds.fanoLines x1 → x2 ∈ PEqualNP.CircuitLowerBounds.fanoLines x3 → (2 : ℕ) ≤ x1.lineDeg (14 : ℕ) {↑x2} → (2 : ℕ) ≤ x1.lineDeg (14 : ℕ) {(7 : ℕ) + ↑x3} → (∃ x11 < x1.gates.length, (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x11).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (2 : ℕ) ≤ List.count ((14 : ℕ) + x11) (x1.output :: List.flatMap PEqualNP.CircuitLowerBounds.Gate.inputs x1.gates)) → False)
+    (hLe : ∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x2 x3 : Fin (7 : ℕ)), x1.size ≤ (26 : ℕ) → PEqualNP.TopForm.IsAO2 (14 : ℕ) x1 → (∀ x6 ∈ x1.gates, x6.inputs.Nodup) → PEqualNP.GenericRejection.ComputesIncidence PEqualNP.CircuitLowerBounds.fanoLines x1 → x2 ∈ PEqualNP.CircuitLowerBounds.fanoLines x3 → (2 : ℕ) ≤ x1.lineDeg (14 : ℕ) {↑x2} → (2 : ℕ) ≤ x1.lineDeg (14 : ℕ) {(7 : ℕ) + ↑x3} → (∃ x11 < x1.gates.length, (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x11).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (2 : ℕ) ≤ List.count ((14 : ℕ) + x11) (x1.output :: List.flatMap PEqualNP.CircuitLowerBounds.Gate.inputs x1.gates)) → False) :
+    (∀ (x1 : PEqualNP.CircuitLowerBounds.Circuit) (x2 x3 : Fin (7 : ℕ)), x1.size ≤ (27 : ℕ) → PEqualNP.TopForm.IsAO2 (14 : ℕ) x1 → (∀ x6 ∈ x1.gates, x6.inputs.Nodup) → PEqualNP.GenericRejection.ComputesIncidence PEqualNP.CircuitLowerBounds.fanoLines x1 → x2 ∈ PEqualNP.CircuitLowerBounds.fanoLines x3 → (2 : ℕ) ≤ x1.lineDeg (14 : ℕ) {↑x2} → (2 : ℕ) ≤ x1.lineDeg (14 : ℕ) {(7 : ℕ) + ↑x3} → (∃ x11 < x1.gates.length, (PEqualNP.MetaComplexity.NestedCover.gateAt x1 x11).op = PEqualNP.CircuitLowerBounds.GateOp.and ∧ (2 : ℕ) ≤ List.count ((14 : ℕ) + x11) (x1.output :: List.flatMap PEqualNP.CircuitLowerBounds.Gate.inputs x1.gates)) → False) := by
+  intro x1 x2 x3 hSz
+  rcases Nat.eq_or_lt_of_le hSz with heq | hlt
+  · exact hEq x1 x2 x3 heq
+  · exact hLe x1 x2 x3 (Nat.le_of_lt_succ hlt)
