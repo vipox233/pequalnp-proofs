@@ -1,0 +1,2023 @@
+import PEqualNP.Defs
+
+namespace PEqualNP.Outside.L_pcx_306_aux
+
+abbrev RawType (n : ℕ) (w : Fin n → ℕ) := (i : Fin n) × Fin (w i)
+
+def blockParity {m : ℕ} (f : Fin m → Bool) : Bool :=
+  decide (Odd ((Finset.univ : Finset (Fin m)).filter (fun j => f j = true)).card)
+
+def parity {n : ℕ} {w : Fin n → ℕ} (y : RawType n w → Bool) (i : Fin n) : Bool :=
+  decide (Odd ((Finset.univ : Finset (Fin (w i))).filter (fun j => y ⟨i, j⟩ = true)).card)
+
+def liftAx {n : ℕ} {w : Fin n → ℕ}
+    (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+    (A : PEqualNP.ProofComplexity.Clause (RawType n w)) : Prop :=
+  ∃ C ∈ F, ∃ y : RawType n w → Bool, (∀ lit ∈ C, parity y lit.1 ≠ lit.2) ∧
+    A = ((Finset.univ : Finset (RawType n w)).filter (fun b => b.1 ∈ C.image Prod.fst)).image
+      (fun b => (b, !(y b)))
+
+def shape (N J : Finset (List Bool)) : Prop :=
+  [] ∈ N ∧ J ⊆ N ∧
+  (∀ (p : List Bool) (b : Bool), p ++ [b] ∈ N → p ∈ J) ∧
+  ∀ p ∈ J, p ++ [false] ∈ N ∧ p ++ [true] ∈ N
+
+def trace {V : Type} (ask : List Bool → V) (p : List Bool) : List V :=
+  List.ofFn (fun j : Fin p.length => ask (p.take j.val))
+
+lemma blockParity_update_not {m : ℕ} (f : Fin m → Bool) (j : Fin m) :
+    blockParity (Function.update f j true) = !(blockParity (Function.update f j false)) := by
+  unfold blockParity
+  let s0 := (Finset.univ : Finset (Fin m)).filter (fun t => Function.update f j false t = true)
+  let s1 := (Finset.univ : Finset (Fin m)).filter (fun t => Function.update f j true t = true)
+  have hj0 : j ∉ s0 := by
+    simp [s0]
+  have hs1 : s1 = insert j s0 := by
+    ext t
+    simp only [s1, s0, Finset.mem_insert, Finset.mem_filter, Finset.mem_univ, true_and]
+    by_cases h : t = j
+    · subst h; simp
+    · simp [h]
+  have hcard : s1.card = s0.card + 1 := by
+    rw [hs1, Finset.card_insert_of_notMem hj0]
+  change decide (Odd s1.card) = !decide (Odd s0.card)
+  rw [hcard]
+  by_cases ho : Odd s0.card
+  · have hno : ¬ Odd (s0.card + 1) := by
+      rcases ho with ⟨k, hk⟩
+      intro ⟨l, hl⟩
+      omega
+    simp [ho, hno]
+  · have ho1 : Odd (s0.card + 1) := by
+      rw [Nat.not_odd_iff_even] at ho
+      rcases ho with ⟨k, hk⟩
+      exact ⟨k, by omega⟩
+    simp [ho, ho1]
+
+lemma blockParity_prefix_xor {m : ℕ} (f : Fin m → Bool) :
+    ∀ (k : ℕ) (hk : k ≤ m),
+      decide (Odd ((Finset.univ : Finset (Fin m)).filter (fun j => j.val < k ∧ f j = true)).card) =
+        (List.ofFn (fun j : Fin k => f ⟨j.val, by omega⟩)).foldl xor false := by
+  intro k hk
+  induction k with
+  | zero =>
+    simp
+  | succ k ih =>
+    have ih' := ih (by omega)
+    let s0 := (Finset.univ : Finset (Fin m)).filter (fun j => j.val < k ∧ f j = true)
+    let s1 := (Finset.univ : Finset (Fin m)).filter (fun j => j.val < k + 1 ∧ f j = true)
+    have hfold :
+        (List.ofFn (fun j : Fin (k + 1) => f ⟨j.val, by omega⟩)).foldl xor false =
+          xor ((List.ofFn (fun j : Fin k => f ⟨j.val, by omega⟩)).foldl xor false)
+            (f ⟨k, by omega⟩) := by
+      rw [List.ofFn_succ', List.concat_eq_append, List.foldl_concat]
+      rfl
+    rw [hfold, ← ih']
+    change decide (Odd s1.card) = xor (decide (Odd s0.card)) (f ⟨k, by omega⟩)
+    cases hfk : f ⟨k, by omega⟩
+    · have heq : s1 = s0 := by
+        ext j
+        simp only [s1, s0, Finset.mem_filter, Finset.mem_univ, true_and]
+        constructor
+        · rintro ⟨h1, h2⟩
+          refine ⟨?_, h2⟩
+          by_contra hge
+          have hjk : j = ⟨k, by omega⟩ := Fin.ext (by dsimp only; omega)
+          rw [hjk, hfk] at h2
+          exact Bool.noConfusion h2
+        · rintro ⟨h1, h2⟩
+          exact ⟨by omega, h2⟩
+      rw [heq]
+      simp
+    · have hj0 : (⟨k, by omega⟩ : Fin m) ∉ s0 := by
+        simp only [s0, Finset.mem_filter, Finset.mem_univ, true_and]
+        intro h
+        exact Nat.lt_irrefl k h.1
+      have hs1 : s1 = insert ⟨k, by omega⟩ s0 := by
+        ext j
+        simp only [s1, s0, Finset.mem_insert, Finset.mem_filter, Finset.mem_univ, true_and]
+        constructor
+        · rintro ⟨h1, h2⟩
+          by_cases hjk : j.val = k
+          · left; exact Fin.ext hjk
+          · right; exact ⟨by omega, h2⟩
+        · rintro (rfl | ⟨h1, h2⟩)
+          · exact ⟨by dsimp only; omega, hfk⟩
+          · exact ⟨by omega, h2⟩
+      have hcard : s1.card = s0.card + 1 := by
+        rw [hs1, Finset.card_insert_of_notMem hj0]
+      rw [hcard]
+      by_cases ho : Odd s0.card
+      · have hno : ¬ Odd (s0.card + 1) := by rcases ho with ⟨t, ht⟩; intro ⟨u, hu⟩; omega
+        simp [ho, hno]
+      · have ho1 : Odd (s0.card + 1) := by
+          rw [Nat.not_odd_iff_even] at ho; rcases ho with ⟨t, ht⟩; exact ⟨t, by omega⟩
+        simp [ho, ho1]
+
+lemma shape_leaf : shape {[]} ∅ := by
+  refine ⟨by simp, by simp, ?_, ?_⟩
+  · intro p b h
+    simp only [Finset.mem_singleton] at h
+    have := congrArg List.length h
+    simp at this
+  · intro p hp
+    exact absurd hp (Finset.notMem_empty _)
+
+lemma shape_combine {N0 J0 N1 J1 : Finset (List Bool)}
+    (h0 : shape N0 J0) (h1 : shape N1 J1) :
+    shape (insert [] (N0.image (false :: ·) ∪ N1.image (true :: ·)))
+      (insert [] (J0.image (false :: ·) ∪ J1.image (true :: ·))) := by
+  refine ⟨Finset.mem_insert_self _ _, ?_, ?_, ?_⟩
+  · intro p hp
+    simp only [Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp ⊢
+    rcases hp with rfl | ⟨q, hq, rfl⟩ | ⟨q, hq, rfl⟩
+    · left; rfl
+    · right; left; exact ⟨q, h0.2.1 hq, rfl⟩
+    · right; right; exact ⟨q, h1.2.1 hq, rfl⟩
+  · intro p b hp
+    simp only [Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp ⊢
+    rcases hp with hnil | ⟨q, hq, hEq⟩ | ⟨q, hq, hEq⟩
+    · have := congrArg List.length hnil; simp at this
+    · cases p with
+      | nil => left; rfl
+      | cons d rest =>
+        simp only [List.cons_append, List.cons.injEq] at hEq
+        rcases hEq with ⟨rfl, rfl⟩
+        right; left; exact ⟨rest, h0.2.2.1 rest b hq, rfl⟩
+    · cases p with
+      | nil => left; rfl
+      | cons d rest =>
+        simp only [List.cons_append, List.cons.injEq] at hEq
+        rcases hEq with ⟨rfl, rfl⟩
+        right; right; exact ⟨rest, h1.2.2.1 rest b hq, rfl⟩
+  · intro p hp
+    simp only [Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp ⊢
+    rcases hp with rfl | ⟨q, hq, rfl⟩ | ⟨q, hq, rfl⟩
+    · constructor
+      · right; left; exact ⟨[], h0.1, rfl⟩
+      · right; right; exact ⟨[], h1.1, rfl⟩
+    · constructor
+      · right; left; exact ⟨q ++ [false], (h0.2.2.2 q hq).1, rfl⟩
+      · right; left; exact ⟨q ++ [true], (h0.2.2.2 q hq).2, rfl⟩
+    · constructor
+      · right; right; exact ⟨q ++ [false], (h1.2.2.2 q hq).1, rfl⟩
+      · right; right; exact ⟨q ++ [true], (h1.2.2.2 q hq).2, rfl⟩
+
+lemma sdiff_combine (N0 J0 N1 J1 : Finset (List Bool)) :
+    insert [] (N0.image (false :: ·) ∪ N1.image (true :: ·)) \
+      insert [] (J0.image (false :: ·) ∪ J1.image (true :: ·)) =
+    (N0 \ J0).image (false :: ·) ∪ (N1 \ J1).image (true :: ·) := by
+  ext p
+  simp only [Finset.mem_sdiff, Finset.mem_insert, Finset.mem_union, Finset.mem_image]
+  constructor
+  · rintro ⟨rfl | ⟨q, hq, rfl⟩ | ⟨q, hq, rfl⟩, hnot⟩
+    · exact absurd (Or.inl rfl) hnot
+    · left; refine ⟨q, ⟨hq, fun hqJ => hnot (Or.inr (Or.inl ⟨q, hqJ, rfl⟩))⟩, rfl⟩
+    · right; refine ⟨q, ⟨hq, fun hqJ => hnot (Or.inr (Or.inr ⟨q, hqJ, rfl⟩))⟩, rfl⟩
+  · rintro (⟨q, ⟨hqN, hqJ⟩, rfl⟩ | ⟨q, ⟨hqN, hqJ⟩, rfl⟩)
+    · refine ⟨Or.inr (Or.inl ⟨q, hqN, rfl⟩), ?_⟩
+      rintro (h | ⟨q', hq', hEq⟩ | ⟨q', _, hEq⟩)
+      · cases h
+      · exact hqJ ((List.cons.inj hEq).2 ▸ hq')
+      · exact Bool.noConfusion (List.cons.inj hEq).1
+    · refine ⟨Or.inr (Or.inr ⟨q, hqN, rfl⟩), ?_⟩
+      rintro (h | ⟨q', _, hEq⟩ | ⟨q', hq', hEq⟩)
+      · cases h
+      · exact Bool.noConfusion (List.cons.inj hEq).1
+      · exact hqJ ((List.cons.inj hEq).2 ▸ hq')
+
+lemma disjoint_cons_images (S0 S1 : Finset (List Bool)) :
+    Disjoint (S0.image (false :: ·)) (S1.image (true :: ·)) := by
+  rw [Finset.disjoint_left]
+  intro p h0 h1
+  obtain ⟨q0, _, rfl⟩ := Finset.mem_image.mp h0
+  obtain ⟨q1, _, hEq⟩ := Finset.mem_image.mp h1
+  exact Bool.noConfusion (List.cons.inj hEq).1
+
+lemma trace_cons {V : Type} (i : V) (ql qr : List Bool → V) (b : Bool) (p : List Bool) :
+    trace (fun l => match l with | [] => i | false :: t => ql t | true :: t => qr t) (b :: p) =
+      i :: trace (if b then qr else ql) p := by
+  apply List.ext_getElem
+  · simp [trace]
+  · intro idx h1 h2
+    cases idx with
+    | zero =>
+      simp [trace]
+    | succ idx =>
+      cases b <;> simp [trace]
+
+inductive RTree (Raw : Type) where
+  | leaf
+  | node (v : Raw) (l r : RTree Raw)
+
+def rheight {Raw : Type} : RTree Raw → ℕ
+  | .leaf => 0
+  | .node _ l r => 1 + max (rheight l) (rheight r)
+
+def rleaves {Raw : Type} : RTree Raw → ℕ
+  | .leaf => 1
+  | .node _ l r => rleaves l + rleaves r
+
+def Falsifies {V : Type} (ρ : V → Option Bool) (C : PEqualNP.ProofComplexity.Clause V) : Prop :=
+  ∀ lit ∈ C, ρ lit.1 = some (!lit.2)
+
+def RSound {n : ℕ} {w : Fin n → ℕ} (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+    (ρ : RawType n w → Option Bool) : RTree (RawType n w) → Prop
+  | .leaf => ∃ A, liftAx F A ∧ Falsifies ρ A
+  | .node v l r =>
+      RSound F (Function.update ρ v (some false)) l ∧
+      RSound F (Function.update ρ v (some true)) r
+
+lemma extract_rtree_aux {n : ℕ} {w : Fin n → ℕ}
+    (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+    (N J : Finset (List Bool)) (line : List Bool → PEqualNP.ProofComplexity.Clause (RawType n w))
+    (H : ℕ)
+    (hshape : shape N J) (hlen : ∀ p ∈ N, p.length ≤ H)
+    (hax : ∀ p ∈ N \ J, liftAx F (line p))
+    (hres : ∀ p ∈ J, PEqualNP.ProofComplexity.IsResolvent
+      (line (p ++ [false])) (line (p ++ [true])) (line p)) :
+    ∀ (d : ℕ) (p : List Bool), p ∈ N → H - p.length ≤ d →
+      ∀ ρ : RawType n w → Option Bool, Falsifies ρ (line p) →
+        ∃ T : RTree (RawType n w),
+          RSound F ρ T ∧
+          rheight T ≤ H - p.length ∧
+          rleaves T ≤ ((N \ J).filter (fun q => p <+: q)).card := by
+  intro d
+  induction d with
+  | zero =>
+    intro p hp hle ρ hfals
+    have hnotJ : p ∉ J := by
+      intro hpJ
+      have hc := (hshape.2.2.2 p hpJ).1
+      have hlc := hlen (p ++ [false]) hc
+      simp at hlc
+      omega
+    have hleaf : p ∈ N \ J := Finset.mem_sdiff.mpr ⟨hp, hnotJ⟩
+    refine ⟨RTree.leaf, ⟨line p, hax p hleaf, hfals⟩, Nat.zero_le _, ?_⟩
+    have hmem : p ∈ (N \ J).filter (fun q => p <+: q) :=
+      Finset.mem_filter.mpr ⟨hleaf, List.prefix_refl p⟩
+    exact Finset.card_pos.mpr ⟨p, hmem⟩
+  | succ d ih =>
+    intro p hp hle ρ hfals
+    by_cases hpJ : p ∈ J
+    · have hp0 : p ++ [false] ∈ N := (hshape.2.2.2 p hpJ).1
+      have hp1 : p ++ [true] ∈ N := (hshape.2.2.2 p hpJ).2
+      have hres_p := hres p hpJ
+      obtain ⟨v, hv0, hv1, hreq⟩ := hres_p
+      have hlen0 : H - (p ++ [false]).length ≤ d := by
+        have := hlen (p ++ [false]) hp0; simp at this ⊢; omega
+      have hlen1 : H - (p ++ [true]).length ≤ d := by
+        have := hlen (p ++ [true]) hp1; simp at this ⊢; omega
+      by_cases hρv_some : ρ v = some false
+      · have hf0 : Falsifies ρ (line (p ++ [false])) := by
+          intro lit hlit
+          by_cases hlv : lit.1 = v
+          · by_cases hlb : lit.2 = true
+            · rw [hlv, hlb, hρv_some]; rfl
+            · have hne_vt : lit ≠ (v, true) := fun h => hlb (congrArg Prod.snd h)
+              have hmemR : lit ∈ line p := by
+                rw [hreq]; exact Finset.mem_union_left _ (Finset.mem_erase.mpr ⟨hne_vt, hlit⟩)
+              exact hfals lit hmemR
+          · have hne_vt : lit ≠ (v, true) := fun h => hlv (congrArg Prod.fst h)
+            have hmemR : lit ∈ line p := by
+              rw [hreq]; exact Finset.mem_union_left _ (Finset.mem_erase.mpr ⟨hne_vt, hlit⟩)
+            exact hfals lit hmemR
+        obtain ⟨T0, hS0, hH0, hL0⟩ := ih (p ++ [false]) hp0 hlen0 ρ hf0
+        refine ⟨T0, hS0, ?_, ?_⟩
+        · simp at hH0; omega
+        · refine le_trans hL0 (Finset.card_le_card ?_)
+          intro q hq
+          simp only [Finset.mem_filter] at hq ⊢
+          exact ⟨hq.1, List.IsPrefix.trans (List.prefix_append p [false]) hq.2⟩
+      · by_cases hρv_true : ρ v = some true
+        · have hf1 : Falsifies ρ (line (p ++ [true])) := by
+            intro lit hlit
+            by_cases hlv : lit.1 = v
+            · by_cases hlb : lit.2 = false
+              · rw [hlv, hlb, hρv_true]; rfl
+              · have hne_vf : lit ≠ (v, false) := fun h => hlb (congrArg Prod.snd h)
+                have hmemR : lit ∈ line p := by
+                  rw [hreq]; exact Finset.mem_union_right _ (Finset.mem_erase.mpr ⟨hne_vf, hlit⟩)
+                exact hfals lit hmemR
+            · have hne_vf : lit ≠ (v, false) := fun h => hlv (congrArg Prod.fst h)
+              have hmemR : lit ∈ line p := by
+                rw [hreq]; exact Finset.mem_union_right _ (Finset.mem_erase.mpr ⟨hne_vf, hlit⟩)
+              exact hfals lit hmemR
+          obtain ⟨T1, hS1, hH1, hL1⟩ := ih (p ++ [true]) hp1 hlen1 ρ hf1
+          refine ⟨T1, hS1, ?_, ?_⟩
+          · simp at hH1; omega
+          · refine le_trans hL1 (Finset.card_le_card ?_)
+            intro q hq
+            simp only [Finset.mem_filter] at hq ⊢
+            exact ⟨hq.1, List.IsPrefix.trans (List.prefix_append p [true]) hq.2⟩
+        · have hρv_none : ρ v = none := by
+            cases h : ρ v with
+            | none => rfl
+            | some b => cases b <;> simp_all
+          have hf0 : Falsifies (Function.update ρ v (some false)) (line (p ++ [false])) := by
+            intro lit hlit
+            by_cases hlv : lit.1 = v
+            · by_cases hlb : lit.2 = true
+              · rw [hlv, hlb]; simp
+              · have hne_vt : lit ≠ (v, true) := fun h => hlb (congrArg Prod.snd h)
+                have hmemR : lit ∈ line p := by
+                  rw [hreq]; exact Finset.mem_union_left _ (Finset.mem_erase.mpr ⟨hne_vt, hlit⟩)
+                have hcontra := hfals lit hmemR
+                rw [hlv, hρv_none] at hcontra
+                cases hcontra
+            · have hne_vt : lit ≠ (v, true) := fun h => hlv (congrArg Prod.fst h)
+              have hmemR : lit ∈ line p := by
+                rw [hreq]; exact Finset.mem_union_left _ (Finset.mem_erase.mpr ⟨hne_vt, hlit⟩)
+              rw [Function.update_of_ne hlv]
+              exact hfals lit hmemR
+          have hf1 : Falsifies (Function.update ρ v (some true)) (line (p ++ [true])) := by
+            intro lit hlit
+            by_cases hlv : lit.1 = v
+            · by_cases hlb : lit.2 = false
+              · rw [hlv, hlb]; simp
+              · have hne_vf : lit ≠ (v, false) := fun h => hlb (congrArg Prod.snd h)
+                have hmemR : lit ∈ line p := by
+                  rw [hreq]; exact Finset.mem_union_right _ (Finset.mem_erase.mpr ⟨hne_vf, hlit⟩)
+                have hcontra := hfals lit hmemR
+                rw [hlv, hρv_none] at hcontra
+                cases hcontra
+            · have hne_vf : lit ≠ (v, false) := fun h => hlv (congrArg Prod.fst h)
+              have hmemR : lit ∈ line p := by
+                rw [hreq]; exact Finset.mem_union_right _ (Finset.mem_erase.mpr ⟨hne_vf, hlit⟩)
+              rw [Function.update_of_ne hlv]
+              exact hfals lit hmemR
+          obtain ⟨T0, hS0, hH0, hL0⟩ := ih (p ++ [false]) hp0 hlen0 _ hf0
+          obtain ⟨T1, hS1, hH1, hL1⟩ := ih (p ++ [true]) hp1 hlen1 _ hf1
+          refine ⟨RTree.node v T0 T1, ⟨hS0, hS1⟩, ?_, ?_⟩
+          · dsimp only [rheight]
+            have hlp0 := hlen (p ++ [false]) hp0
+            simp at hH0 hH1 hlp0
+            omega
+          · dsimp only [rleaves]
+            have hdisj : Disjoint ((N \ J).filter (fun q => p ++ [false] <+: q))
+                ((N \ J).filter (fun q => p ++ [true] <+: q)) := by
+              rw [Finset.disjoint_left]
+              intro q hq0 hq1
+              obtain ⟨t0, ht0⟩ := (Finset.mem_filter.mp hq0).2
+              obtain ⟨t1, ht1⟩ := (Finset.mem_filter.mp hq1).2
+              have heq := ht0.trans ht1.symm
+              rw [List.append_assoc, List.append_assoc] at heq
+              have htail := List.append_cancel_left heq
+              exact Bool.noConfusion (List.cons.inj htail).1
+            have hsub :
+                (N \ J).filter (fun q => p ++ [false] <+: q) ∪
+                  (N \ J).filter (fun q => p ++ [true] <+: q) ⊆
+                (N \ J).filter (fun q => p <+: q) := by
+              intro q hq
+              simp only [Finset.mem_union, Finset.mem_filter] at hq ⊢
+              rcases hq with ⟨hq1, hq2⟩ | ⟨hq1, hq2⟩
+              · exact ⟨hq1, List.IsPrefix.trans (List.prefix_append p [false]) hq2⟩
+              · exact ⟨hq1, List.IsPrefix.trans (List.prefix_append p [true]) hq2⟩
+            have hcard_sum :
+                ((N \ J).filter (fun q => p ++ [false] <+: q)).card +
+                  ((N \ J).filter (fun q => p ++ [true] <+: q)).card ≤
+                ((N \ J).filter (fun q => p <+: q)).card := by
+              rw [← Finset.card_union_of_disjoint hdisj]
+              exact Finset.card_le_card hsub
+            omega
+    · have hleaf : p ∈ N \ J := Finset.mem_sdiff.mpr ⟨hp, hpJ⟩
+      refine ⟨RTree.leaf, ⟨line p, hax p hleaf, hfals⟩, Nat.zero_le _, ?_⟩
+      have hmem : p ∈ (N \ J).filter (fun q => p <+: q) :=
+        Finset.mem_filter.mpr ⟨hleaf, List.prefix_refl p⟩
+      exact Finset.card_pos.mpr ⟨p, hmem⟩
+
+def rem {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool) (i : Fin n) : ℕ :=
+  ((Finset.univ : Finset (Fin (w i))).filter (fun j => ρ ⟨i, j⟩ = none)).card
+
+def partialBits {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool) : ℕ :=
+  ∑ i : Fin n, if 0 < rem ρ i then w i - rem ρ i else 0
+
+def blockVal {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool) (i : Fin n) : Bool :=
+  parity (fun b => (ρ b).getD false) i
+
+lemma rem_le_w {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool) (i : Fin n) :
+    rem ρ i ≤ w i := by
+  simpa [rem] using Finset.card_le_univ ((Finset.univ : Finset (Fin (w i))).filter (fun j => ρ ⟨i, j⟩ = none))
+
+lemma rem_update_other {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool)
+    (v : RawType n w) (val : Bool) (i : Fin n) (hi : i ≠ v.1) :
+    rem (Function.update ρ v (some val)) i = rem ρ i := by
+  unfold rem
+  congr 1
+  ext j
+  have hne : (⟨i, j⟩ : RawType n w) ≠ v := fun h => hi (congrArg Sigma.fst h)
+  simp [Function.update_of_ne hne]
+
+lemma rem_update_self {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool)
+    (v : RawType n w) (hnone : ρ v = none) (val : Bool) :
+    rem (Function.update ρ v (some val)) v.1 + 1 = rem ρ v.1 := by
+  unfold rem
+  let s0 := (Finset.univ : Finset (Fin (w v.1))).filter (fun j => Function.update ρ v (some val) ⟨v.1, j⟩ = none)
+  let s1 := (Finset.univ : Finset (Fin (w v.1))).filter (fun j => ρ ⟨v.1, j⟩ = none)
+  have hnot : v.2 ∉ s0 := by
+    simp [s0]
+  have heq : s1 = insert v.2 s0 := by
+    ext j
+    simp only [s1, s0, Finset.mem_insert, Finset.mem_filter, Finset.mem_univ, true_and]
+    by_cases h : j = v.2
+    · subst h
+      have hv_eq : (⟨v.1, v.2⟩ : RawType n w) = v := rfl
+      simp [hv_eq, hnone]
+    · have hne : (⟨v.1, j⟩ : RawType n w) ≠ v := by
+        intro heq
+        apply h
+        cases v
+        exact eq_of_heq (Sigma.mk.inj_iff.mp heq).2
+      simp [h, Function.update_of_ne hne]
+  change s0.card + 1 = s1.card
+  rw [heq, Finset.card_insert_of_notMem hnot]
+
+lemma partialBits_update_ge2 {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool)
+    (v : RawType n w) (hnone : ρ v = none) (hge : 2 ≤ rem ρ v.1) (val : Bool) :
+    partialBits (Function.update ρ v (some val)) = partialBits ρ + 1 := by
+  unfold partialBits
+  rw [← Finset.add_sum_erase _ _ (Finset.mem_univ v.1),
+      ← Finset.add_sum_erase _ _ (Finset.mem_univ v.1)]
+  have hrest :
+      ∑ i ∈ Finset.univ.erase v.1,
+        (if 0 < rem (Function.update ρ v (some val)) i then w i - rem (Function.update ρ v (some val)) i else 0) =
+      ∑ i ∈ Finset.univ.erase v.1,
+        (if 0 < rem ρ i then w i - rem ρ i else 0) := by
+    refine Finset.sum_congr rfl (fun i hi => ?_)
+    rw [rem_update_other ρ v val i (Finset.mem_erase.mp hi).1]
+  rw [hrest]
+  have hrem := rem_update_self ρ v hnone val
+  have hle := rem_le_w ρ v.1
+  have hpos1 : 0 < rem (Function.update ρ v (some val)) v.1 := by omega
+  have hpos2 : 0 < rem ρ v.1 := by omega
+  simp only [hpos1, hpos2, ↓reduceIte]
+  omega
+
+lemma partialBits_update_eq1 {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool)
+    (v : RawType n w) (hnone : ρ v = none) (heq1 : rem ρ v.1 = 1) (val : Bool) :
+    partialBits ρ = partialBits (Function.update ρ v (some val)) + (w v.1 - 1) := by
+  unfold partialBits
+  rw [← Finset.add_sum_erase _ _ (Finset.mem_univ v.1),
+      ← Finset.add_sum_erase _ _ (Finset.mem_univ v.1)]
+  have hrest :
+      ∑ i ∈ Finset.univ.erase v.1,
+        (if 0 < rem (Function.update ρ v (some val)) i then w i - rem (Function.update ρ v (some val)) i else 0) =
+      ∑ i ∈ Finset.univ.erase v.1,
+        (if 0 < rem ρ i then w i - rem ρ i else 0) := by
+    refine Finset.sum_congr rfl (fun i hi => ?_)
+    rw [rem_update_other ρ v val i (Finset.mem_erase.mp hi).1]
+  rw [hrest]
+  have hrem := rem_update_self ρ v hnone val
+  have h0 : rem (Function.update ρ v (some val)) v.1 = 0 := by omega
+  simp only [h0, heq1, Nat.lt_irrefl, Nat.zero_lt_one, ↓reduceIte, zero_add]
+  omega
+
+lemma blockVal_update_other {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool)
+    (v : RawType n w) (val : Bool) (i : Fin n) (hi : i ≠ v.1) :
+    blockVal (Function.update ρ v (some val)) i = blockVal ρ i := by
+  unfold blockVal parity
+  congr 3
+  ext j
+  have hne : (⟨i, j⟩ : RawType n w) ≠ v := fun h => hi (congrArg Sigma.fst h)
+  simp [Function.update_of_ne hne]
+
+lemma blockVal_update_flip {n : ℕ} {w : Fin n → ℕ} (ρ : RawType n w → Option Bool)
+    (v : RawType n w) :
+    blockVal (Function.update ρ v (some true)) v.1 =
+      !(blockVal (Function.update ρ v (some false)) v.1) := by
+  let f : Fin (w v.1) → Bool := fun j => (ρ ⟨v.1, j⟩).getD false
+  have hT : blockVal (Function.update ρ v (some true)) v.1 = blockParity (Function.update f v.2 true) := by
+    unfold blockVal parity blockParity
+    congr 3
+    ext j
+    by_cases h : j = v.2
+    · subst h
+      have hv_eq : (⟨v.1, v.2⟩ : RawType n w) = v := rfl
+      simp [hv_eq]
+    · have hne : (⟨v.1, j⟩ : RawType n w) ≠ v := by
+        intro heq; apply h; cases v; exact eq_of_heq (Sigma.mk.inj_iff.mp heq).2
+      simp [f, h, Function.update_of_ne hne]
+  have hF : blockVal (Function.update ρ v (some false)) v.1 = blockParity (Function.update f v.2 false) := by
+    unfold blockVal parity blockParity
+    congr 3
+    ext j
+    by_cases h : j = v.2
+    · subst h
+      have hv_eq : (⟨v.1, v.2⟩ : RawType n w) = v := rfl
+      simp [hv_eq]
+    · have hne : (⟨v.1, j⟩ : RawType n w) ≠ v := by
+        intro heq; apply h; cases v; exact eq_of_heq (Sigma.mk.inj_iff.mp heq).2
+      simp [f, h, Function.update_of_ne hne]
+  rw [hT, hF]
+  exact blockParity_update_not f v.2
+
+lemma extract_outer {n : ℕ} (hn : 0 < n) {w : Fin n → ℕ} (hw : ∀ i, 0 < w i)
+    (F : Set (PEqualNP.ProofComplexity.Clause (Fin n))) :
+    ∀ (T : RTree (RawType n w)) (ρ : RawType n w → Option Bool),
+      RSound F ρ T →
+      ∃ (M A : Finset (List Bool)) (q : List Bool → Fin n),
+        shape M A ∧
+        (∀ p ∈ M, (trace q p).Nodup ∧ (∀ i ∈ trace q p, 0 < rem ρ i) ∧
+          ((trace q p).map w).sum ≤ rheight T + partialBits ρ) ∧
+        (∀ p ∈ M \ A, ∃ C ∈ F, ∀ lit ∈ C,
+          (rem ρ lit.1 = 0 ∧ blockVal ρ lit.1 ≠ lit.2) ∨
+          (∃ j : Fin p.length, q (p.take j.val) = lit.1 ∧ p.get j ≠ lit.2)) ∧
+        (M \ A).sum (fun p => 2 ^ (((trace q p).map w).sum - p.length)) ≤
+          rleaves T * 2 ^ partialBits ρ := by
+  intro T
+  induction T with
+  | leaf =>
+    intro ρ ⟨Cl, hax, hfals⟩
+    obtain ⟨C, hCF, y, hyC, hCl_eq⟩ := hax
+    refine ⟨{[]}, ∅, fun _ => ⟨0, hn⟩, shape_leaf, ?_, ?_, ?_⟩
+    · intro p hp
+      rw [Finset.mem_singleton.mp hp]
+      simp [trace]
+    · intro p hp
+      have hp' : p = [] := Finset.mem_singleton.mp (Finset.mem_sdiff.mp hp).1
+      subst hp'
+      refine ⟨C, hCF, fun lit hlit => Or.inl ⟨?_, ?_⟩⟩
+      · have hvars : lit.1 ∈ C.image Prod.fst := Finset.mem_image.mpr ⟨lit, hlit, rfl⟩
+        have hall_some : ∀ j : Fin (w lit.1), ρ ⟨lit.1, j⟩ = some (y ⟨lit.1, j⟩) := by
+          intro j
+          have hmemA : (⟨lit.1, j⟩, !(y ⟨lit.1, j⟩)) ∈ Cl := by
+            rw [hCl_eq]
+            exact Finset.mem_image.mpr ⟨⟨lit.1, j⟩, Finset.mem_filter.mpr ⟨Finset.mem_univ _, hvars⟩, rfl⟩
+          have hf := hfals _ hmemA
+          simpa using hf
+        have hrem0 : rem ρ lit.1 = 0 := by
+          unfold rem
+          rw [Finset.card_eq_zero, Finset.filter_eq_empty_iff]
+          intro j _
+          rw [hall_some j]
+          exact Option.some_ne_none _
+        exact hrem0
+      · have hvars : lit.1 ∈ C.image Prod.fst := Finset.mem_image.mpr ⟨lit, hlit, rfl⟩
+        have hall_some : ∀ j : Fin (w lit.1), ρ ⟨lit.1, j⟩ = some (y ⟨lit.1, j⟩) := by
+          intro j
+          have hmemA : (⟨lit.1, j⟩, !(y ⟨lit.1, j⟩)) ∈ Cl := by
+            rw [hCl_eq]
+            exact Finset.mem_image.mpr ⟨⟨lit.1, j⟩, Finset.mem_filter.mpr ⟨Finset.mem_univ _, hvars⟩, rfl⟩
+          have hf := hfals _ hmemA
+          simpa using hf
+        have hbv : blockVal ρ lit.1 = parity y lit.1 := by
+          unfold blockVal parity
+          congr 3
+          ext j
+          simp [hall_some j]
+        rw [hbv]
+        exact hyC lit hlit
+    · simp only [Finset.sdiff_empty, Finset.sum_singleton, trace, List.length_nil, List.ofFn_zero,
+        List.map_nil, List.sum_nil, Nat.sub_self, pow_zero, rleaves, one_mul]
+      exact Nat.one_le_two_pow
+  | node v l r ihl ihr =>
+    intro ρ ⟨hSl, hSr⟩
+    by_cases hnone : ρ v = none
+    · have hrem_pos : 1 ≤ rem ρ v.1 := by
+        unfold rem
+        exact Finset.card_pos.mpr ⟨v.2, Finset.mem_filter.mpr ⟨Finset.mem_univ _, hnone⟩⟩
+      by_cases hge2 : 2 ≤ rem ρ v.1
+      · by_cases hcmp : rleaves l ≤ rleaves r
+        · obtain ⟨M, A, q, hsh, hM, hleaf, hsum⟩ := ihl (Function.update ρ v (some false)) hSl
+          have hpb := partialBits_update_ge2 ρ v hnone hge2 false
+          refine ⟨M, A, q, hsh, ?_, ?_, ?_⟩
+          · intro p hp
+            obtain ⟨hnod, hrem_p, hht⟩ := hM p hp
+            refine ⟨hnod, fun i hi => ?_, ?_⟩
+            · have hi' := hrem_p i hi
+              by_cases hiv : i = v.1
+              · rw [hiv]; omega
+              · rwa [rem_update_other ρ v false i hiv] at hi'
+            · dsimp only [rheight]
+              rw [hpb] at hht
+              omega
+          · intro p hp
+            obtain ⟨C, hCF, hC⟩ := hleaf p hp
+            refine ⟨C, hCF, fun lit hlit => ?_⟩
+            rcases hC lit hlit with ⟨hrem0, hbv⟩ | hex
+            · have hne : lit.1 ≠ v.1 := by
+                intro heq
+                have := rem_update_self ρ v hnone false
+                rw [heq] at hrem0
+                omega
+              left
+              rw [rem_update_other ρ v false lit.1 hne] at hrem0
+              rw [blockVal_update_other ρ v false lit.1 hne] at hbv
+              exact ⟨hrem0, hbv⟩
+            · exact Or.inr hex
+          · dsimp only [rleaves]
+            rw [hpb, pow_succ] at hsum
+            have h2 : 2 * rleaves l ≤ rleaves l + rleaves r := by omega
+            calc (M \ A).sum (fun p => 2 ^ (((trace q p).map w).sum - p.length))
+                ≤ rleaves l * (2 ^ partialBits ρ * 2) := hsum
+              _ = (2 * rleaves l) * 2 ^ partialBits ρ := by ring
+              _ ≤ (rleaves l + rleaves r) * 2 ^ partialBits ρ := Nat.mul_le_mul_right _ h2
+        · obtain ⟨M, A, q, hsh, hM, hleaf, hsum⟩ := ihr (Function.update ρ v (some true)) hSr
+          have hpb := partialBits_update_ge2 ρ v hnone hge2 true
+          refine ⟨M, A, q, hsh, ?_, ?_, ?_⟩
+          · intro p hp
+            obtain ⟨hnod, hrem_p, hht⟩ := hM p hp
+            refine ⟨hnod, fun i hi => ?_, ?_⟩
+            · have hi' := hrem_p i hi
+              by_cases hiv : i = v.1
+              · rw [hiv]; omega
+              · rwa [rem_update_other ρ v true i hiv] at hi'
+            · dsimp only [rheight]
+              rw [hpb] at hht
+              omega
+          · intro p hp
+            obtain ⟨C, hCF, hC⟩ := hleaf p hp
+            refine ⟨C, hCF, fun lit hlit => ?_⟩
+            rcases hC lit hlit with ⟨hrem0, hbv⟩ | hex
+            · have hne : lit.1 ≠ v.1 := by
+                intro heq
+                have := rem_update_self ρ v hnone true
+                rw [heq] at hrem0
+                omega
+              left
+              rw [rem_update_other ρ v true lit.1 hne] at hrem0
+              rw [blockVal_update_other ρ v true lit.1 hne] at hbv
+              exact ⟨hrem0, hbv⟩
+            · exact Or.inr hex
+          · dsimp only [rleaves]
+            rw [hpb, pow_succ] at hsum
+            have h2 : 2 * rleaves r ≤ rleaves l + rleaves r := by omega
+            calc (M \ A).sum (fun p => 2 ^ (((trace q p).map w).sum - p.length))
+                ≤ rleaves r * (2 ^ partialBits ρ * 2) := hsum
+              _ = (2 * rleaves r) * 2 ^ partialBits ρ := by ring
+              _ ≤ (rleaves l + rleaves r) * 2 ^ partialBits ρ := Nat.mul_le_mul_right _ h2
+      · have heq1 : rem ρ v.1 = 1 := by omega
+        obtain ⟨Ml, Al, ql, hshl, hMl, hleafl, hsuml⟩ := ihl (Function.update ρ v (some false)) hSl
+        obtain ⟨Mr, Ar, qr, hshr, hMr, hleafr, hsumr⟩ := ihr (Function.update ρ v (some true)) hSr
+        have hpb_l := partialBits_update_eq1 ρ v hnone heq1 false
+        have hpb_r := partialBits_update_eq1 ρ v hnone heq1 true
+        have hflip := blockVal_update_flip ρ v
+        have hrem_l0 : rem (Function.update ρ v (some false)) v.1 = 0 := by
+          have := rem_update_self ρ v hnone false; omega
+        have hrem_r0 : rem (Function.update ρ v (some true)) v.1 = 0 := by
+          have := rem_update_self ρ v hnone true; omega
+        let bF := blockVal (Function.update ρ v (some false)) v.1
+        let M0 := if bF = false then Ml else Mr
+        let A0 := if bF = false then Al else Ar
+        let q0 := if bF = false then ql else qr
+        let M1 := if bF = false then Mr else Ml
+        let A1 := if bF = false then Ar else Al
+        let q1 := if bF = false then qr else ql
+        let ρ0 := Function.update ρ v (some (if bF = false then false else true))
+        let ρ1 := Function.update ρ v (some (if bF = false then true else false))
+        have hbv0 : blockVal ρ0 v.1 = false := by
+          dsimp only [ρ0]
+          split_ifs with h
+          · exact h
+          · have ht : bF = true := Bool.eq_true_of_not_eq_false h
+            rw [hflip]
+            change (!bF) = false
+            rw [ht]; rfl
+        have hbv1 : blockVal ρ1 v.1 = true := by
+          dsimp only [ρ1]
+          split_ifs with h
+          · rw [hflip]
+            change (!bF) = true
+            rw [h]; rfl
+          · exact Bool.eq_true_of_not_eq_false h
+        have hsh0 : shape M0 A0 := by dsimp only [M0, A0]; split_ifs <;> assumption
+        have hsh1 : shape M1 A1 := by dsimp only [M1, A1]; split_ifs <;> assumption
+        have hpb0 : partialBits ρ = partialBits ρ0 + (w v.1 - 1) := by
+          dsimp only [ρ0]; split_ifs <;> assumption
+        have hpb1 : partialBits ρ = partialBits ρ1 + (w v.1 - 1) := by
+          dsimp only [ρ1]; split_ifs <;> assumption
+        have hM0 : ∀ p ∈ M0, (trace q0 p).Nodup ∧ (∀ i ∈ trace q0 p, 0 < rem ρ0 i) ∧
+            ((trace q0 p).map w).sum ≤ max (rheight l) (rheight r) + partialBits ρ0 := by
+          dsimp only [M0, q0, ρ0]
+          split_ifs
+          · intro p hp; obtain ⟨h1, h2, h3⟩ := hMl p hp; exact ⟨h1, h2, by omega⟩
+          · intro p hp; obtain ⟨h1, h2, h3⟩ := hMr p hp; exact ⟨h1, h2, by omega⟩
+        have hM1 : ∀ p ∈ M1, (trace q1 p).Nodup ∧ (∀ i ∈ trace q1 p, 0 < rem ρ1 i) ∧
+            ((trace q1 p).map w).sum ≤ max (rheight l) (rheight r) + partialBits ρ1 := by
+          dsimp only [M1, q1, ρ1]
+          split_ifs
+          · intro p hp; obtain ⟨h1, h2, h3⟩ := hMr p hp; exact ⟨h1, h2, by omega⟩
+          · intro p hp; obtain ⟨h1, h2, h3⟩ := hMl p hp; exact ⟨h1, h2, by omega⟩
+        have hleaf0 : ∀ p ∈ M0 \ A0, ∃ C ∈ F, ∀ lit ∈ C,
+            (rem ρ0 lit.1 = 0 ∧ blockVal ρ0 lit.1 ≠ lit.2) ∨
+            (∃ j : Fin p.length, q0 (p.take j.val) = lit.1 ∧ p.get j ≠ lit.2) := by
+          dsimp only [M0, A0, q0, ρ0]; split_ifs <;> assumption
+        have hleaf1 : ∀ p ∈ M1 \ A1, ∃ C ∈ F, ∀ lit ∈ C,
+            (rem ρ1 lit.1 = 0 ∧ blockVal ρ1 lit.1 ≠ lit.2) ∨
+            (∃ j : Fin p.length, q1 (p.take j.val) = lit.1 ∧ p.get j ≠ lit.2) := by
+          dsimp only [M1, A1, q1, ρ1]; split_ifs <;> assumption
+        let M := insert [] (M0.image (false :: ·) ∪ M1.image (true :: ·))
+        let A := insert [] (A0.image (false :: ·) ∪ A1.image (true :: ·))
+        let q : List Bool → Fin n := fun p =>
+          match p with
+          | [] => v.1
+          | false :: t => q0 t
+          | true :: t => q1 t
+        refine ⟨M, A, q, shape_combine hsh0 hsh1, ?_, ?_, ?_⟩
+        · intro p hp
+          simp only [M, Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp
+          rcases hp with rfl | ⟨p0, hp0, rfl⟩ | ⟨p1, hp1, rfl⟩
+          · simp [trace]
+          · have htr : trace q (false :: p0) = v.1 :: trace q0 p0 := by
+              simpa [q] using trace_cons v.1 q0 q1 false p0
+            obtain ⟨hnod0, hrem0, hht0⟩ := hM0 p0 hp0
+            have hrem_ρ0_v : rem ρ0 v.1 = 0 := by dsimp only [ρ0]; split_ifs <;> assumption
+            have hv_not_mem : v.1 ∉ trace q0 p0 := fun hm => by
+              have := hrem0 v.1 hm; omega
+            rw [htr]
+            refine ⟨List.nodup_cons.mpr ⟨hv_not_mem, hnod0⟩, ?_, ?_⟩
+            · intro i hi
+              simp only [List.mem_cons] at hi
+              rcases hi with rfl | hi
+              · omega
+              · have hi' := hrem0 i hi
+                have hne : i ≠ v.1 := fun h => by rw [h] at hi'; omega
+                dsimp only [ρ0] at hi'
+                split_ifs at hi' <;> rwa [rem_update_other ρ v _ i hne] at hi'
+            · simp only [List.map_cons, List.sum_cons, rheight]
+              have hwv := hw v.1
+              omega
+          · have htr : trace q (true :: p1) = v.1 :: trace q1 p1 := by
+              simpa [q] using trace_cons v.1 q0 q1 true p1
+            obtain ⟨hnod1, hrem1, hht1⟩ := hM1 p1 hp1
+            have hrem_ρ1_v : rem ρ1 v.1 = 0 := by dsimp only [ρ1]; split_ifs <;> assumption
+            have hv_not_mem : v.1 ∉ trace q1 p1 := fun hm => by
+              have := hrem1 v.1 hm; omega
+            rw [htr]
+            refine ⟨List.nodup_cons.mpr ⟨hv_not_mem, hnod1⟩, ?_, ?_⟩
+            · intro i hi
+              simp only [List.mem_cons] at hi
+              rcases hi with rfl | hi
+              · omega
+              · have hi' := hrem1 i hi
+                have hne : i ≠ v.1 := fun h => by rw [h] at hi'; omega
+                dsimp only [ρ1] at hi'
+                split_ifs at hi' <;> rwa [rem_update_other ρ v _ i hne] at hi'
+            · simp only [List.map_cons, List.sum_cons, rheight]
+              have hwv := hw v.1
+              omega
+        · intro p hp
+          rw [sdiff_combine] at hp
+          rcases Finset.mem_union.mp hp with hp0_img | hp1_img
+          · obtain ⟨p0, hp0, rfl⟩ := Finset.mem_image.mp hp0_img
+            obtain ⟨C, hCF, hC⟩ := hleaf0 p0 hp0
+            refine ⟨C, hCF, fun lit hlit => ?_⟩
+            rcases hC lit hlit with ⟨hrem0, hbv⟩ | ⟨j, hjq, hjb⟩
+            · by_cases hlv : lit.1 = v.1
+              · right
+                refine ⟨⟨0, by simp⟩, by simp [q, hlv], ?_⟩
+                rw [hlv, hbv0] at hbv
+                simpa using hbv
+              · left
+                dsimp only [ρ0] at hrem0 hbv
+                split_ifs at hrem0 hbv
+                · rw [rem_update_other ρ v false lit.1 hlv] at hrem0
+                  rw [blockVal_update_other ρ v false lit.1 hlv] at hbv
+                  exact ⟨hrem0, hbv⟩
+                · rw [rem_update_other ρ v true lit.1 hlv] at hrem0
+                  rw [blockVal_update_other ρ v true lit.1 hlv] at hbv
+                  exact ⟨hrem0, hbv⟩
+            · right
+              refine ⟨⟨j.val + 1, by simp⟩, ?_, ?_⟩
+              · simpa [q] using hjq
+              · simpa using hjb
+          · obtain ⟨p1, hp1, rfl⟩ := Finset.mem_image.mp hp1_img
+            obtain ⟨C, hCF, hC⟩ := hleaf1 p1 hp1
+            refine ⟨C, hCF, fun lit hlit => ?_⟩
+            rcases hC lit hlit with ⟨hrem1, hbv⟩ | ⟨j, hjq, hjb⟩
+            · by_cases hlv : lit.1 = v.1
+              · right
+                refine ⟨⟨0, by simp⟩, by simp [q, hlv], ?_⟩
+                rw [hlv, hbv1] at hbv
+                simpa using hbv
+              · left
+                dsimp only [ρ1] at hrem1 hbv
+                split_ifs at hrem1 hbv
+                · rw [rem_update_other ρ v true lit.1 hlv] at hrem1
+                  rw [blockVal_update_other ρ v true lit.1 hlv] at hbv
+                  exact ⟨hrem1, hbv⟩
+                · rw [rem_update_other ρ v false lit.1 hlv] at hrem1
+                  rw [blockVal_update_other ρ v false lit.1 hlv] at hbv
+                  exact ⟨hrem1, hbv⟩
+            · right
+              refine ⟨⟨j.val + 1, by simp⟩, ?_, ?_⟩
+              · simpa [q] using hjq
+              · simpa using hjb
+        · have hlen_ge : ∀ (qf : List Bool → Fin n) (p : List Bool),
+              p.length ≤ ((trace qf p).map w).sum := by
+            intro qf p
+            have hl : p.length = (trace qf p).length := by simp [trace]
+            rw [hl]
+            have h1 : ∀ L : List (Fin n), L.length ≤ (L.map w).sum := by
+              intro L
+              induction L with
+              | nil => simp
+              | cons a t ih =>
+                simp only [List.length_cons, List.map_cons, List.sum_cons]
+                have := hw a
+                omega
+            exact h1 (trace qf p)
+          rw [sdiff_combine, Finset.sum_union (disjoint_cons_images _ _),
+            Finset.sum_image (fun _ _ _ _ h => (List.cons.inj h).2),
+            Finset.sum_image (fun _ _ _ _ h => (List.cons.inj h).2)]
+          have hs0 :
+              ∑ p0 ∈ M0 \ A0, 2 ^ (((trace q (false :: p0)).map w).sum - (false :: p0).length) =
+                2 ^ (w v.1 - 1) * ∑ p0 ∈ M0 \ A0, 2 ^ (((trace q0 p0).map w).sum - p0.length) := by
+            rw [Finset.mul_sum]
+            refine Finset.sum_congr rfl (fun p0 _ => ?_)
+            have htr : trace q (false :: p0) = v.1 :: trace q0 p0 := by
+              simpa [q] using trace_cons v.1 q0 q1 false p0
+            rw [htr, List.map_cons, List.sum_cons, List.length_cons]
+            have hge0 := hlen_ge q0 p0
+            have hwv := hw v.1
+            have hexp : w v.1 + ((trace q0 p0).map w).sum - (p0.length + 1) =
+                (w v.1 - 1) + (((trace q0 p0).map w).sum - p0.length) := by omega
+            rw [hexp, pow_add]
+          have hs1 :
+              ∑ p1 ∈ M1 \ A1, 2 ^ (((trace q (true :: p1)).map w).sum - (true :: p1).length) =
+                2 ^ (w v.1 - 1) * ∑ p1 ∈ M1 \ A1, 2 ^ (((trace q1 p1).map w).sum - p1.length) := by
+            rw [Finset.mul_sum]
+            refine Finset.sum_congr rfl (fun p1 _ => ?_)
+            have htr : trace q (true :: p1) = v.1 :: trace q1 p1 := by
+              simpa [q] using trace_cons v.1 q0 q1 true p1
+            rw [htr, List.map_cons, List.sum_cons, List.length_cons]
+            have hge1 := hlen_ge q1 p1
+            have hwv := hw v.1
+            have hexp : w v.1 + ((trace q1 p1).map w).sum - (p1.length + 1) =
+                (w v.1 - 1) + (((trace q1 p1).map w).sum - p1.length) := by omega
+            rw [hexp, pow_add]
+          rw [hs0, hs1, ← mul_add]
+          have hsum_both :
+              (∑ p0 ∈ M0 \ A0, 2 ^ (((trace q0 p0).map w).sum - p0.length)) +
+                (∑ p1 ∈ M1 \ A1, 2 ^ (((trace q1 p1).map w).sum - p1.length)) =
+              (∑ p0 ∈ Ml \ Al, 2 ^ (((trace ql p0).map w).sum - p0.length)) +
+                (∑ p1 ∈ Mr \ Ar, 2 ^ (((trace qr p1).map w).sum - p1.length)) := by
+            dsimp only [M0, A0, q0, M1, A1, q1]
+            split_ifs
+            · rfl
+            · exact add_comm _ _
+          rw [hsum_both]
+          have hpb_eq : partialBits (Function.update ρ v (some false)) =
+              partialBits (Function.update ρ v (some true)) := by omega
+          calc 2 ^ (w v.1 - 1) *
+                ((∑ p0 ∈ Ml \ Al, 2 ^ (((trace ql p0).map w).sum - p0.length)) +
+                  (∑ p1 ∈ Mr \ Ar, 2 ^ (((trace qr p1).map w).sum - p1.length)))
+              ≤ 2 ^ (w v.1 - 1) *
+                (rleaves l * 2 ^ partialBits (Function.update ρ v (some false)) +
+                  rleaves r * 2 ^ partialBits (Function.update ρ v (some true))) :=
+                Nat.mul_le_mul_left _ (Nat.add_le_add hsuml hsumr)
+            _ = (rleaves l + rleaves r) *
+                (2 ^ partialBits (Function.update ρ v (some false)) * 2 ^ (w v.1 - 1)) := by
+                rw [← hpb_eq]; ring
+            _ = rleaves (RTree.node v l r) * 2 ^ partialBits ρ := by
+                rw [← pow_add, ← hpb_l]; rfl
+    · cases hρv : ρ v with
+      | none => exact absurd hρv hnone
+      | some b =>
+        cases b
+        · have hupd : Function.update ρ v (some false) = ρ := by
+            funext u; by_cases h : u = v
+            · subst h; simp [hρv]
+            · simp [h]
+          rw [hupd] at hSl
+          obtain ⟨M, A, q, hsh, hM, hleaf, hsum⟩ := ihl ρ hSl
+          refine ⟨M, A, q, hsh, ?_, hleaf, ?_⟩
+          · intro p hp
+            obtain ⟨h1, h2, h3⟩ := hM p hp
+            exact ⟨h1, h2, by dsimp only [rheight]; omega⟩
+          · exact le_trans hsum (Nat.mul_le_mul_right _ (by dsimp only [rleaves]; omega))
+        · have hupd : Function.update ρ v (some true) = ρ := by
+            funext u; by_cases h : u = v
+            · subst h; simp [hρv]
+            · simp [h]
+          rw [hupd] at hSr
+          obtain ⟨M, A, q, hsh, hM, hleaf, hsum⟩ := ihr ρ hSr
+          refine ⟨M, A, q, hsh, ?_, hleaf, ?_⟩
+          · intro p hp
+            obtain ⟨h1, h2, h3⟩ := hM p hp
+            exact ⟨h1, h2, by dsimp only [rheight]; omega⟩
+          · exact le_trans hsum (Nat.mul_le_mul_right _ (by dsimp only [rleaves]; omega))
+
+lemma resolve_rtree {n : ℕ} {w : Fin n → ℕ}
+    (F : Set (PEqualNP.ProofComplexity.Clause (Fin n))) :
+    ∀ (T : RTree (RawType n w)) (ρ : RawType n w → Option Bool),
+      RSound F ρ T →
+      ∃ (N J : Finset (List Bool)) (line : List Bool → PEqualNP.ProofComplexity.Clause (RawType n w)),
+        shape N J ∧
+        Falsifies ρ (line []) ∧
+        (∀ p ∈ N, p.length ≤ rheight T) ∧
+        (N \ J).card ≤ rleaves T ∧
+        (∀ p ∈ N \ J, liftAx F (line p)) ∧
+        (∀ p ∈ J, PEqualNP.ProofComplexity.IsResolvent
+          (line (p ++ [false])) (line (p ++ [true])) (line p)) := by
+  intro T
+  induction T with
+  | leaf =>
+    intro ρ ⟨Cl, hax, hfals⟩
+    refine ⟨{[]}, ∅, fun _ => Cl, shape_leaf, hfals, ?_, ?_, ?_, ?_⟩
+    · intro p hp; rw [Finset.mem_singleton.mp hp]; simp [rheight]
+    · simp [rleaves]
+    · intro p _; exact hax
+    · intro p hp; exact absurd hp (Finset.notMem_empty _)
+  | node v l r ihl ihr =>
+    intro ρ ⟨hSl, hSr⟩
+    obtain ⟨N0, J0, line0, hsh0, hf0, hht0, hlf0, hax0, hres0⟩ :=
+      ihl (Function.update ρ v (some false)) hSl
+    obtain ⟨N1, J1, line1, hsh1, hf1, hht1, hlf1, hax1, hres1⟩ :=
+      ihr (Function.update ρ v (some true)) hSr
+    by_cases hv0 : (v, true) ∈ line0 []
+    · by_cases hv1 : (v, false) ∈ line1 []
+      · let R := (line0 []).erase (v, true) ∪ (line1 []).erase (v, false)
+        let N := insert [] (N0.image (false :: ·) ∪ N1.image (true :: ·))
+        let J := insert [] (J0.image (false :: ·) ∪ J1.image (true :: ·))
+        let line : List Bool → PEqualNP.ProofComplexity.Clause (RawType n w) := fun p =>
+          match p with
+          | [] => R
+          | false :: t => line0 t
+          | true :: t => line1 t
+        refine ⟨N, J, line, shape_combine hsh0 hsh1, ?_, ?_, ?_, ?_, ?_⟩
+        · intro lit hlit
+          rcases Finset.mem_union.mp hlit with hl0 | hl1
+          · obtain ⟨hne, hmem⟩ := Finset.mem_erase.mp hl0
+            have h := hf0 lit hmem
+            have hlv : lit.1 ≠ v := by
+              intro heq
+              rw [heq, Function.update_self] at h
+              have hlt : lit.2 = true := by cases hlb : lit.2 <;> simp_all
+              exact hne (Prod.ext heq hlt)
+            rwa [Function.update_of_ne hlv] at h
+          · obtain ⟨hne, hmem⟩ := Finset.mem_erase.mp hl1
+            have h := hf1 lit hmem
+            have hlv : lit.1 ≠ v := by
+              intro heq
+              rw [heq, Function.update_self] at h
+              have hlf : lit.2 = false := by cases hlb : lit.2 <;> simp_all
+              exact hne (Prod.ext heq hlf)
+            rwa [Function.update_of_ne hlv] at h
+        · intro p hp
+          simp only [N, Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp
+          rcases hp with rfl | ⟨p0, hp0, rfl⟩ | ⟨p1, hp1, rfl⟩
+          · simp
+          · have := hht0 p0 hp0; simp only [List.length_cons, rheight]; omega
+          · have := hht1 p1 hp1; simp only [List.length_cons, rheight]; omega
+        · rw [sdiff_combine, Finset.card_union_of_disjoint (disjoint_cons_images _ _),
+            Finset.card_image_of_injective _ (fun _ _ h => (List.cons.inj h).2),
+            Finset.card_image_of_injective _ (fun _ _ h => (List.cons.inj h).2)]
+          dsimp only [rleaves]
+          omega
+        · intro p hp
+          rw [sdiff_combine] at hp
+          rcases Finset.mem_union.mp hp with hp0_img | hp1_img
+          · obtain ⟨p0, hp0, rfl⟩ := Finset.mem_image.mp hp0_img
+            exact hax0 p0 hp0
+          · obtain ⟨p1, hp1, rfl⟩ := Finset.mem_image.mp hp1_img
+            exact hax1 p1 hp1
+        · intro p hp
+          simp only [J, Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp
+          rcases hp with rfl | ⟨p0, hp0, rfl⟩ | ⟨p1, hp1, rfl⟩
+          · exact ⟨v, hv0, hv1, rfl⟩
+          · exact hres0 p0 hp0
+          · exact hres1 p1 hp1
+      · refine ⟨N1, J1, line1, hsh1, ?_, ?_, ?_, hax1, hres1⟩
+        · intro lit hlit
+          have h := hf1 lit hlit
+          have hlv : lit.1 ≠ v := by
+            intro heq
+            rw [heq, Function.update_self] at h
+            have hlf : lit.2 = false := by cases hlb : lit.2 <;> simp_all
+            have hlit_eq : lit = (v, false) := Prod.ext heq hlf
+            exact hv1 (hlit_eq ▸ hlit)
+          rwa [Function.update_of_ne hlv] at h
+        · intro p hp; have := hht1 p hp; dsimp only [rheight]; omega
+        · dsimp only [rleaves]; omega
+    · refine ⟨N0, J0, line0, hsh0, ?_, ?_, ?_, hax0, hres0⟩
+      · intro lit hlit
+        have h := hf0 lit hlit
+        have hlv : lit.1 ≠ v := by
+          intro heq
+          rw [heq, Function.update_self] at h
+          have hlt : lit.2 = true := by cases hlb : lit.2 <;> simp_all
+          have hlit_eq : lit = (v, true) := Prod.ext heq hlt
+          exact hv0 (hlit_eq ▸ hlit)
+        rwa [Function.update_of_ne hlv] at h
+      · intro p hp; have := hht0 p hp; dsimp only [rheight]; omega
+      · dsimp only [rleaves]; omega
+
+def expandBlock {n : ℕ} {w : Fin n → ℕ} (i : Fin n)
+    (tFalse tTrue : RTree (RawType n w)) :
+    ∀ (remSteps : ℕ), remSteps ≤ w i → Bool → RTree (RawType n w)
+  | 0, _, acc => if acc = false then tFalse else tTrue
+  | k + 1, hk, acc =>
+      let idx : Fin (w i) := ⟨w i - (k + 1), by omega⟩
+      RTree.node ⟨i, idx⟩
+        (expandBlock i tFalse tTrue k (by omega) acc)
+        (expandBlock i tFalse tTrue k (by omega) (!acc))
+
+lemma expandBlock_height {n : ℕ} {w : Fin n → ℕ} (i : Fin n)
+    (tFalse tTrue : RTree (RawType n w)) :
+    ∀ (k : ℕ) (hk : k ≤ w i) (acc : Bool),
+      rheight (expandBlock i tFalse tTrue k hk acc) ≤ k + max (rheight tFalse) (rheight tTrue) := by
+  intro k
+  induction k with
+  | zero =>
+    intro hk acc
+    dsimp only [expandBlock]
+    split_ifs <;> omega
+  | succ k ih =>
+    intro hk acc
+    dsimp only [expandBlock, rheight]
+    have h0 := ih (by omega) acc
+    have h1 := ih (by omega) (!acc)
+    omega
+
+lemma expandBlock_leaves {n : ℕ} {w : Fin n → ℕ} (i : Fin n)
+    (tFalse tTrue : RTree (RawType n w)) :
+    ∀ (k : ℕ) (hk : k + 1 ≤ w i) (acc : Bool),
+      rleaves (expandBlock i tFalse tTrue (k + 1) hk acc) =
+        2 ^ k * (rleaves tFalse + rleaves tTrue) := by
+  intro k
+  induction k with
+  | zero =>
+    intro hk acc
+    cases acc <;> simp [expandBlock, rleaves, add_comm]
+  | succ k ih =>
+    intro hk acc
+    rw [expandBlock, rleaves, ih (by omega) acc, ih (by omega) (!acc), pow_succ]
+    ring
+
+lemma expandBlock_sound {n : ℕ} {w : Fin n → ℕ}
+    (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+    (i : Fin n) (tFalse tTrue : RTree (RawType n w)) :
+    ∀ (k : ℕ) (hk : k ≤ w i) (ρ : RawType n w → Option Bool) (acc : Bool),
+      (∀ (ρ' : RawType n w → Option Bool),
+        (∀ j : Fin (w i), j.val < w i - k → ρ' ⟨i, j⟩ = ρ ⟨i, j⟩) →
+        (∀ b : RawType n w, b.1 ≠ i → ρ' b = ρ b) →
+        (∀ j : Fin (w i), w i - k ≤ j.val → ∃ b : Bool, ρ' ⟨i, j⟩ = some b) →
+        let finalAcc :=
+          (List.ofFn (fun j : Fin k => (ρ' ⟨i, ⟨w i - k + j.val, by omega⟩⟩).getD false)).foldl xor acc
+        if finalAcc = false then RSound F ρ' tFalse else RSound F ρ' tTrue) →
+      RSound F ρ (expandBlock i tFalse tTrue k hk acc) := by
+  intro k
+  induction k with
+  | zero =>
+    intro hk ρ acc hcond
+    have h := hcond ρ (fun _ _ => rfl) (fun _ _ => rfl) (fun j hj => by have := j.isLt; omega)
+    dsimp only [expandBlock]
+    cases acc <;> simpa using h
+  | succ k ih =>
+    intro hk ρ acc hcond
+    dsimp only [expandBlock, RSound]
+    let idx : Fin (w i) := ⟨w i - (k + 1), by omega⟩
+    constructor
+    · refine ih (by omega) (Function.update ρ ⟨i, idx⟩ (some false)) acc ?_
+      intro ρ' hlt hoth hge
+      have hlt' : ∀ j : Fin (w i), j.val < w i - (k + 1) → ρ' ⟨i, j⟩ = ρ ⟨i, j⟩ := by
+        intro j hj
+        rw [hlt j (by omega)]
+        have hne : (⟨i, j⟩ : RawType n w) ≠ ⟨i, idx⟩ := by
+          intro h; have := congrArg (fun x : RawType n w => x.2.val) h
+          dsimp only [idx] at this; omega
+        exact Function.update_of_ne hne _ _
+      have hoth' : ∀ b : RawType n w, b.1 ≠ i → ρ' b = ρ b := by
+        intro b hb
+        rw [hoth b hb]
+        have hne : b ≠ ⟨i, idx⟩ := fun h => hb (congrArg Sigma.fst h)
+        exact Function.update_of_ne hne _ _
+      have hidx_val : ρ' ⟨i, idx⟩ = some false := by
+        rw [hlt idx (by dsimp only [idx]; omega), Function.update_self]
+      have hge' : ∀ j : Fin (w i), w i - (k + 1) ≤ j.val → ∃ b : Bool, ρ' ⟨i, j⟩ = some b := by
+        intro j hj
+        by_cases hjeq : j.val = w i - (k + 1)
+        · have hj' : j = idx := Fin.ext hjeq
+          exact ⟨false, hj' ▸ hidx_val⟩
+        · exact hge j (by omega)
+      have hres := hcond ρ' hlt' hoth' hge'
+      have hfold :
+          (List.ofFn (fun j : Fin (k + 1) => (ρ' ⟨i, ⟨w i - (k + 1) + j.val, by omega⟩⟩).getD false)).foldl xor acc =
+          (List.ofFn (fun j : Fin k => (ρ' ⟨i, ⟨w i - k + j.val, by omega⟩⟩).getD false)).foldl xor acc := by
+        rw [List.ofFn_succ, List.foldl_cons]
+        simp only [Fin.val_zero, Fin.val_succ]
+        have h0 : (⟨w i - (k + 1) + 0, by omega⟩ : Fin (w i)) = idx := Fin.ext (by dsimp [idx])
+        rw [h0, hidx_val]
+        simp only [Option.getD_some, Bool.xor_false]
+        congr 2
+        funext j
+        have heq : (⟨w i - (k + 1) + (j.val + 1), by omega⟩ : Fin (w i)) = ⟨w i - k + j.val, by omega⟩ :=
+          Fin.ext (by dsimp only; omega)
+        rw [heq]
+      dsimp only at hres ⊢
+      rwa [hfold] at hres
+    · refine ih (by omega) (Function.update ρ ⟨i, idx⟩ (some true)) (!acc) ?_
+      intro ρ' hlt hoth hge
+      have hlt' : ∀ j : Fin (w i), j.val < w i - (k + 1) → ρ' ⟨i, j⟩ = ρ ⟨i, j⟩ := by
+        intro j hj
+        rw [hlt j (by omega)]
+        have hne : (⟨i, j⟩ : RawType n w) ≠ ⟨i, idx⟩ := by
+          intro h; have := congrArg (fun x : RawType n w => x.2.val) h
+          dsimp only [idx] at this; omega
+        exact Function.update_of_ne hne _ _
+      have hoth' : ∀ b : RawType n w, b.1 ≠ i → ρ' b = ρ b := by
+        intro b hb
+        rw [hoth b hb]
+        have hne : b ≠ ⟨i, idx⟩ := fun h => hb (congrArg Sigma.fst h)
+        exact Function.update_of_ne hne _ _
+      have hidx_val : ρ' ⟨i, idx⟩ = some true := by
+        rw [hlt idx (by dsimp only [idx]; omega), Function.update_self]
+      have hge' : ∀ j : Fin (w i), w i - (k + 1) ≤ j.val → ∃ b : Bool, ρ' ⟨i, j⟩ = some b := by
+        intro j hj
+        by_cases hjeq : j.val = w i - (k + 1)
+        · have hj' : j = idx := Fin.ext hjeq
+          exact ⟨true, hj' ▸ hidx_val⟩
+        · exact hge j (by omega)
+      have hres := hcond ρ' hlt' hoth' hge'
+      have hfold :
+          (List.ofFn (fun j : Fin (k + 1) => (ρ' ⟨i, ⟨w i - (k + 1) + j.val, by omega⟩⟩).getD false)).foldl xor acc =
+          (List.ofFn (fun j : Fin k => (ρ' ⟨i, ⟨w i - k + j.val, by omega⟩⟩).getD false)).foldl xor (!acc) := by
+        rw [List.ofFn_succ, List.foldl_cons]
+        simp only [Fin.val_zero, Fin.val_succ]
+        have h0 : (⟨w i - (k + 1) + 0, by omega⟩ : Fin (w i)) = idx := Fin.ext (by dsimp [idx])
+        rw [h0, hidx_val]
+        simp only [Option.getD_some, Bool.xor_true]
+        congr 2
+        funext j
+        have heq : (⟨w i - (k + 1) + (j.val + 1), by omega⟩ : Fin (w i)) = ⟨w i - k + j.val, by omega⟩ :=
+          Fin.ext (by dsimp only; omega)
+        rw [heq]
+      dsimp only at hres ⊢
+      rwa [hfold] at hres
+
+lemma build_rtree_from_outer {n : ℕ} {w : Fin n → ℕ} (hw : ∀ i, 0 < w i)
+    (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+    (M A : Finset (List Bool)) (q : List Bool → Fin n) (H : ℕ)
+    (hsh : shape M A)
+    (hM : ∀ p ∈ M, (trace q p).Nodup ∧ ((trace q p).map w).sum ≤ H)
+    (hleaf : ∀ p ∈ M \ A, ∃ C ∈ F, ∀ lit ∈ C, ∃ j : Fin p.length,
+      q (p.take j.val) = lit.1 ∧ p.get j ≠ lit.2) :
+    ∀ (d : ℕ) (p : List Bool), p ∈ M → n - p.length ≤ d →
+      ∃ T : RTree (RawType n w),
+        (∀ ρ : RawType n w → Option Bool,
+          (∀ j : Fin p.length,
+            (∀ t : Fin (w (q (p.take j.val))), ∃ b : Bool, ρ ⟨q (p.take j.val), t⟩ = some b) ∧
+            blockVal ρ (q (p.take j.val)) = p.get j) →
+          RSound F ρ T) ∧
+        rheight T + ((trace q p).map w).sum ≤ H ∧
+        rleaves T * 2 ^ (((trace q p).map w).sum - p.length) ≤
+          ((M \ A).filter (fun r => p <+: r)).sum
+            (fun r => 2 ^ (((trace q r).map w).sum - r.length)) := by
+  have hleaf_case : ∀ (p : List Bool), p ∈ M → p ∉ A →
+      ∃ T : RTree (RawType n w),
+        (∀ ρ : RawType n w → Option Bool,
+          (∀ j : Fin p.length,
+            (∀ t : Fin (w (q (p.take j.val))), ∃ b : Bool, ρ ⟨q (p.take j.val), t⟩ = some b) ∧
+            blockVal ρ (q (p.take j.val)) = p.get j) →
+          RSound F ρ T) ∧
+        rheight T + ((trace q p).map w).sum ≤ H ∧
+        rleaves T * 2 ^ (((trace q p).map w).sum - p.length) ≤
+          ((M \ A).filter (fun r => p <+: r)).sum
+            (fun r => 2 ^ (((trace q r).map w).sum - r.length)) := by
+    intro p hp hnotA
+    have hmem : p ∈ M \ A := Finset.mem_sdiff.mpr ⟨hp, hnotA⟩
+    obtain ⟨C, hCF, hC⟩ := hleaf p hmem
+    refine ⟨RTree.leaf, ?_, ?_, ?_⟩
+    · intro ρ hρ
+      let y : RawType n w → Bool := fun b => (ρ b).getD false
+      let Cl : PEqualNP.ProofComplexity.Clause (RawType n w) :=
+        ((Finset.univ : Finset (RawType n w)).filter (fun b => b.1 ∈ C.image Prod.fst)).image
+          (fun b => (b, !(y b)))
+      refine ⟨Cl, ⟨C, hCF, y, ?_, rfl⟩, ?_⟩
+      · intro lit hlit
+        obtain ⟨j, hjq, hjb⟩ := hC lit hlit
+        have hbv := (hρ j).2
+        rw [hjq] at hbv
+        have heq : parity y lit.1 = blockVal ρ lit.1 := rfl
+        rw [heq, hbv]
+        exact hjb
+      · intro lit hlit
+        obtain ⟨b, hb, rfl⟩ := Finset.mem_image.mp hlit
+        have hb_var : b.1 ∈ C.image Prod.fst := (Finset.mem_filter.mp hb).2
+        obtain ⟨clit, hclit, hcb⟩ := Finset.mem_image.mp hb_var
+        obtain ⟨j, hjq, _⟩ := hC clit hclit
+        have hsome := (hρ j).1 (hcb.symm.trans hjq.symm ▸ b.2)
+        obtain ⟨bv, hbv⟩ := hsome
+        have heq_b : (⟨q (p.take j.val), hcb.symm.trans hjq.symm ▸ b.2⟩ : RawType n w) = b := by
+          cases b with
+          | mk b1 b2 =>
+            dsimp only at hcb ⊢
+            exact Sigma.ext (hjq.trans hcb) (by simp)
+        rw [heq_b] at hbv
+        simp only [y, hbv, Option.getD_some, Bool.not_not]
+    · dsimp only [rheight]
+      have := (hM p hp).2
+      omega
+    · dsimp only [rleaves]
+      rw [one_mul]
+      have hmp : p ∈ (M \ A).filter (fun r => p <+: r) :=
+        Finset.mem_filter.mpr ⟨hmem, List.prefix_refl p⟩
+      exact Finset.single_le_sum
+        (f := fun r => 2 ^ (((trace q r).map w).sum - r.length))
+        (fun _ _ => Nat.zero_le _) hmp
+  intro d
+  induction d with
+  | zero =>
+    intro p hp hd
+    have hnotA : p ∉ A := by
+      intro hpA
+      have hp0 := (hsh.2.2.2 p hpA).1
+      have hnod := (hM (p ++ [false]) hp0).1
+      have hlen_le : (trace q (p ++ [false])).length ≤ Fintype.card (Fin n) :=
+        List.Nodup.length_le_card hnod
+      simp only [trace, List.length_ofFn, List.length_append, List.length_singleton,
+        Fintype.card_fin] at hlen_le
+      omega
+    exact hleaf_case p hp hnotA
+  | succ d ih =>
+    intro p hp hd
+    by_cases hpA : p ∈ A
+    · have hp0 : p ++ [false] ∈ M := (hsh.2.2.2 p hpA).1
+      have hp1 : p ++ [true] ∈ M := (hsh.2.2.2 p hpA).2
+      have hlen0 : n - (p ++ [false]).length ≤ d := by simp; omega
+      have hlen1 : n - (p ++ [true]).length ≤ d := by simp; omega
+      let i := q p
+      have hnod0 := (hM (p ++ [false]) hp0).1
+      have htr_append : ∀ b : Bool, trace q (p ++ [b]) = trace q p ++ [i] := by
+        intro b
+        apply List.ext_getElem
+        · simp [trace]
+        · intro idx h1 h2
+          by_cases hidx : idx < p.length
+          · rw [List.getElem_append_left (by simpa [trace] using hidx)]
+            simp only [trace, List.getElem_ofFn, List.take_append_of_le_length (le_of_lt hidx)]
+          · have hidx_eq : idx = p.length := by simp [trace] at h1; omega
+            subst hidx_eq
+            rw [List.getElem_append_right (by simp [trace])]
+            simp only [trace, List.getElem_ofFn, List.length_ofFn, Nat.sub_self,
+              List.getElem_singleton, List.take_left', i]
+      have hi_not_in_p : ∀ j : Fin p.length, q (p.take j.val) ≠ i := by
+        intro j heq
+        rw [htr_append false, List.nodup_append] at hnod0
+        have hmem_p : i ∈ trace q p := by
+          rw [← heq]
+          simp only [trace, List.mem_ofFn]
+          exact ⟨j, rfl⟩
+        exact hnod0.2.2 i hmem_p i (by simp) rfl
+      have hsum_step : ∀ b : Bool,
+          ((trace q (p ++ [b])).map w).sum = ((trace q p).map w).sum + w i := by
+        intro b
+        rw [htr_append b, List.map_append, List.sum_append, List.map_singleton, List.sum_singleton]
+      obtain ⟨T0, hS0, hH0, hL0⟩ := ih (p ++ [false]) hp0 hlen0
+      obtain ⟨T1, hS1, hH1, hL1⟩ := ih (p ++ [true]) hp1 hlen1
+      let T := expandBlock i T0 T1 (w i) le_rfl false
+      refine ⟨T, ?_, ?_, ?_⟩
+      · intro ρ hρ
+        refine expandBlock_sound F i T0 T1 (w i) le_rfl ρ false ?_
+        intro ρ' _ hoth hge
+        have hfull : ∀ t : Fin (w i), ∃ v : Bool, ρ' ⟨i, t⟩ = some v := by
+          intro t
+          exact hge t (by omega)
+        have hacc_eq :
+            (List.ofFn (fun j : Fin (w i) => (ρ' ⟨i, ⟨w i - w i + j.val, by omega⟩⟩).getD false)).foldl xor false =
+              blockVal ρ' i := by
+          have hpx := blockParity_prefix_xor (fun t : Fin (w i) => (ρ' ⟨i, t⟩).getD false) (w i) le_rfl
+          have hbv :
+              decide (Odd ((Finset.univ : Finset (Fin (w i))).filter
+                (fun j => j.val < w i ∧ (ρ' ⟨i, j⟩).getD false = true)).card) = blockVal ρ' i := by
+            unfold blockVal parity
+            congr 3
+            ext j
+            simp
+          rw [hbv] at hpx
+          rw [hpx]
+          congr 2
+          funext j
+          have hj_eq : (⟨w i - w i + j.val, by omega⟩ : Fin (w i)) = ⟨j.val, j.isLt⟩ :=
+            Fin.ext (by dsimp only; omega)
+          rw [hj_eq]
+        have hbranch : ∀ (b : Bool), blockVal ρ' i = b →
+            (∀ j : Fin (p ++ [b]).length,
+              (∀ t : Fin (w (q ((p ++ [b]).take j.val))), ∃ v : Bool, ρ' ⟨q ((p ++ [b]).take j.val), t⟩ = some v) ∧
+              blockVal ρ' (q ((p ++ [b]).take j.val)) = (p ++ [b]).get j) := by
+          intro b hbv j
+          by_cases hj : j.val < p.length
+          · have htake : (p ++ [b]).take j.val = p.take j.val := List.take_append_of_le_length (le_of_lt hj)
+            have hget : (p ++ [b]).get j = p.get ⟨j.val, hj⟩ := by
+              simp [List.getElem_append_left hj]
+            have hne : q (p.take j.val) ≠ i := hi_not_in_p ⟨j.val, hj⟩
+            rw [htake, hget]
+            constructor
+            · intro t
+              rw [hoth ⟨q (p.take j.val), t⟩ hne]
+              exact (hρ ⟨j.val, hj⟩).1 t
+            · have hbv_eq : blockVal ρ' (q (p.take j.val)) = blockVal ρ (q (p.take j.val)) := by
+                unfold blockVal parity
+                congr 3
+                ext t
+                simp only [Finset.mem_filter, Finset.mem_univ, true_and, hoth ⟨q (p.take j.val), t⟩ hne]
+              rw [hbv_eq]
+              exact (hρ ⟨j.val, hj⟩).2
+          · have hjeq : j.val = p.length := by have := j.isLt; simp at this; omega
+            have htake : (p ++ [b]).take j.val = p := by rw [hjeq]; simp
+            have hget : (p ++ [b]).get j = b := by
+              simp [hjeq]
+            rw [htake, hget]
+            exact ⟨hfull, hbv⟩
+        dsimp only
+        rw [hacc_eq]
+        cases hbv : blockVal ρ' i
+        · simp only [↓reduceIte]
+          exact hS0 ρ' (hbranch false hbv)
+        · simp only [Bool.true_eq_false, ↓reduceIte]
+          exact hS1 ρ' (hbranch true hbv)
+      · have hh := expandBlock_height i T0 T1 (w i) le_rfl false
+        rw [hsum_step false] at hH0
+        rw [hsum_step true] at hH1
+        dsimp only [T]
+        omega
+      · have hwi : 1 ≤ w i := hw i
+        have hrl : rleaves T = 2 ^ (w i - 1) * (rleaves T0 + rleaves T1) := by
+          have := expandBlock_leaves i T0 T1 (w i - 1) (by omega) false
+          have hT_eq : T = expandBlock i T0 T1 ((w i - 1) + 1) (by omega) false := by
+            dsimp only [T]
+            congr 1
+            omega
+          rw [hT_eq]
+          exact this
+        have hlen_ge : p.length ≤ ((trace q p).map w).sum := by
+          have hl : p.length = (trace q p).length := by simp [trace]
+          rw [hl]
+          have h1 : ∀ L : List (Fin n), L.length ≤ (L.map w).sum := by
+            intro L
+            induction L with
+            | nil => simp
+            | cons a t iht =>
+              simp only [List.length_cons, List.map_cons, List.sum_cons]
+              have := hw a; omega
+          exact h1 (trace q p)
+        have hexp_eq : ∀ b : Bool,
+            ((trace q (p ++ [b])).map w).sum - (p ++ [b]).length =
+              (w i - 1) + (((trace q p).map w).sum - p.length) := by
+          intro b
+          rw [hsum_step b, List.length_append, List.length_singleton]
+          omega
+        have hdisj : Disjoint ((M \ A).filter (fun r => p ++ [false] <+: r))
+            ((M \ A).filter (fun r => p ++ [true] <+: r)) := by
+          rw [Finset.disjoint_left]
+          intro r hr0 hr1
+          obtain ⟨t0, ht0⟩ := (Finset.mem_filter.mp hr0).2
+          obtain ⟨t1, ht1⟩ := (Finset.mem_filter.mp hr1).2
+          have heq := ht0.trans ht1.symm
+          rw [List.append_assoc, List.append_assoc] at heq
+          exact Bool.noConfusion (List.cons.inj (List.append_cancel_left heq)).1
+        have hsub :
+            (M \ A).filter (fun r => p ++ [false] <+: r) ∪
+              (M \ A).filter (fun r => p ++ [true] <+: r) ⊆
+            (M \ A).filter (fun r => p <+: r) := by
+          intro r hr
+          simp only [Finset.mem_union, Finset.mem_filter] at hr ⊢
+          rcases hr with ⟨h1, h2⟩ | ⟨h1, h2⟩
+          · exact ⟨h1, List.IsPrefix.trans (List.prefix_append p [false]) h2⟩
+          · exact ⟨h1, List.IsPrefix.trans (List.prefix_append p [true]) h2⟩
+        have hsum_sub :
+            ((M \ A).filter (fun r => p ++ [false] <+: r)).sum
+              (fun r => 2 ^ (((trace q r).map w).sum - r.length)) +
+            ((M \ A).filter (fun r => p ++ [true] <+: r)).sum
+              (fun r => 2 ^ (((trace q r).map w).sum - r.length)) ≤
+            ((M \ A).filter (fun r => p <+: r)).sum
+              (fun r => 2 ^ (((trace q r).map w).sum - r.length)) := by
+          rw [← Finset.sum_union hdisj]
+          exact Finset.sum_le_sum_of_subset hsub
+        rw [hexp_eq false, pow_add] at hL0
+        rw [hexp_eq true, pow_add] at hL1
+        calc rleaves T * 2 ^ (((trace q p).map w).sum - p.length)
+            = rleaves T0 * (2 ^ (w i - 1) * 2 ^ (((trace q p).map w).sum - p.length)) +
+              rleaves T1 * (2 ^ (w i - 1) * 2 ^ (((trace q p).map w).sum - p.length)) := by
+                rw [hrl]; ring
+          _ ≤ ((M \ A).filter (fun r => p ++ [false] <+: r)).sum
+                (fun r => 2 ^ (((trace q r).map w).sum - r.length)) +
+              ((M \ A).filter (fun r => p ++ [true] <+: r)).sum
+                (fun r => 2 ^ (((trace q r).map w).sum - r.length)) :=
+                Nat.add_le_add hL0 hL1
+          _ ≤ ((M \ A).filter (fun r => p <+: r)).sum
+                (fun r => 2 ^ (((trace q r).map w).sum - r.length)) := hsum_sub
+    · exact hleaf_case p hp hpA
+
+
+theorem transfer :
+ (∀ (n : ℕ) (hn : 0 < n) (w : Fin n → ℕ), (∀ i, 0 < w i) →
+  let Raw := (i : Fin n) × Fin (w i)
+  let parity := fun (y : Raw → Bool) (i : Fin n) =>
+    decide (Odd ((Finset.univ : Finset (Fin (w i))).filter (fun j => y ⟨i,j⟩ = true)).card)
+  let liftAx := fun (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+      (A : PEqualNP.ProofComplexity.Clause Raw) =>
+    ∃ C ∈ F, ∃ y : Raw → Bool, (∀ lit ∈ C, parity y lit.1 ≠ lit.2) ∧
+      A = ((Finset.univ : Finset Raw).filter (fun b => b.1 ∈ C.image Prod.fst)).image
+        (fun b => (b, !(y b)))
+  let shape := fun (N J : Finset (List Bool)) =>
+    [] ∈ N ∧ J ⊆ N ∧
+    (∀ (p : List Bool) (b : Bool), p ++ [b] ∈ N → p ∈ J) ∧
+    ∀ p ∈ J, p ++ [false] ∈ N ∧ p ++ [true] ∈ N
+  let refutes := fun (F : Set (PEqualNP.ProofComplexity.Clause (Fin n))) (H K : ℕ) =>
+    ∃ (N J : Finset (List Bool)) (line : List Bool → PEqualNP.ProofComplexity.Clause Raw),
+      shape N J ∧ line [] = ∅ ∧ (∀ p ∈ N, p.length ≤ H) ∧ (N \ J).card ≤ K ∧
+      (∀ p ∈ N \ J, liftAx F (line p)) ∧
+      ∀ p ∈ J, PEqualNP.ProofComplexity.IsResolvent
+        (line (p ++ [false])) (line (p ++ [true])) (line p)
+  let trace := fun {V : Type} (ask : List Bool → V) (p : List Bool) =>
+    List.ofFn (fun j : Fin p.length => ask (p.take j.val))
+  ∀ (F : Set (PEqualNP.ProofComplexity.Clause (Fin n))) (H K : ℕ),
+    Iff (refutes F H K)
+      (∃ (M A : Finset (List Bool)) (q : List Bool → Fin n),
+        shape M A ∧ (∀ p ∈ M, (trace q p).Nodup ∧ ((trace q p).map w).sum ≤ H) ∧
+        (∀ p ∈ M \ A, ∃ C ∈ F, ∀ lit ∈ C, ∃ j : Fin p.length,
+          q (p.take j.val) = lit.1 ∧ p.get j ≠ lit.2) ∧
+        (M \ A).sum (fun p => 2^(((trace q p).map w).sum - p.length)) ≤ K)) := by
+  intro n hn w hw
+  dsimp only
+  intro F H K
+  constructor
+  · rintro ⟨N, J, line, hsh, hroot, hlen, hcard, hax, hres⟩
+    have hfals_empty : PEqualNP.Outside.L_pcx_306_aux.Falsifies (fun _ : PEqualNP.Outside.L_pcx_306_aux.RawType n w => none) (line []) := by
+      rw [hroot]
+      intro lit hlit
+      exact absurd hlit (Finset.notMem_empty _)
+    obtain ⟨T, hS, hH, hL⟩ := PEqualNP.Outside.L_pcx_306_aux.extract_rtree_aux F N J line H
+      hsh hlen hax hres H [] hsh.1 (by simp) _ hfals_empty
+    obtain ⟨M, A, q, hshM, hM, hleaf, hsum⟩ :=
+      PEqualNP.Outside.L_pcx_306_aux.extract_outer hn hw F T (fun _ => none) hS
+    have hrem_init : ∀ i : Fin n, PEqualNP.Outside.L_pcx_306_aux.rem (fun _ : PEqualNP.Outside.L_pcx_306_aux.RawType n w => none) i = w i := by
+      intro i
+      simp [PEqualNP.Outside.L_pcx_306_aux.rem]
+    have hpb_init : PEqualNP.Outside.L_pcx_306_aux.partialBits (fun _ : PEqualNP.Outside.L_pcx_306_aux.RawType n w => none) = 0 := by
+      unfold PEqualNP.Outside.L_pcx_306_aux.partialBits
+      refine Finset.sum_eq_zero (fun i _ => ?_)
+      rw [hrem_init i]
+      simp
+    refine ⟨M, A, q, hshM, ?_, ?_, ?_⟩
+    · intro p hp
+      obtain ⟨hnod, _, hht⟩ := hM p hp
+      rw [hpb_init, add_zero] at hht
+      simp at hH
+      exact ⟨hnod, le_trans hht hH⟩
+    · intro p hp
+      obtain ⟨C, hCF, hC⟩ := hleaf p hp
+      refine ⟨C, hCF, fun lit hlit => ?_⟩
+      rcases hC lit hlit with ⟨hrem0, _⟩ | hex
+      · rw [hrem_init lit.1] at hrem0
+        have := hw lit.1
+        omega
+      · exact hex
+    · rw [hpb_init, pow_zero, mul_one] at hsum
+      have hfilt : (N \ J).filter (fun r => [] <+: r) = N \ J := by
+        ext r; simp
+      rw [hfilt] at hL
+      exact le_trans hsum (le_trans hL hcard)
+  · rintro ⟨M, A, q, hsh, hM, hleaf, hsum⟩
+    obtain ⟨T, hS, hH, hL⟩ := PEqualNP.Outside.L_pcx_306_aux.build_rtree_from_outer hw F M A q H
+      hsh hM hleaf n [] hsh.1 (by simp)
+    have hS0 : PEqualNP.Outside.L_pcx_306_aux.RSound F (fun _ => none) T :=
+      hS (fun _ => none) (fun j => Fin.elim0 j)
+    obtain ⟨N, J, line, hshN, hfals, hht, hcard, hax, hres⟩ :=
+      PEqualNP.Outside.L_pcx_306_aux.resolve_rtree F T (fun _ => none) hS0
+    have hroot : line [] = ∅ := by
+      rw [Finset.eq_empty_iff_forall_notMem]
+      intro lit hlit
+      have h := hfals lit hlit
+      cases h
+    refine ⟨N, J, line, hshN, hroot, ?_, ?_, hax, hres⟩
+    · intro p hp
+      have := hht p hp
+      simp [PEqualNP.Outside.L_pcx_306_aux.trace] at hH
+      omega
+    · have hfilt : (M \ A).filter (fun r => [] <+: r) = M \ A := by
+        ext r; simp
+      simp only [PEqualNP.Outside.L_pcx_306_aux.trace, List.length_nil, List.ofFn_zero,
+        List.map_nil, List.sum_nil, Nat.sub_self, pow_zero, mul_one, hfilt] at hL
+      exact le_trans hcard (le_trans hL hsum)
+
+
+def tabR (n : ℕ) (w : Fin n → ℕ) : ℕ → ℕ → ℕ → ℕ → ℕ → Prop := Nat.rec
+    (fun i j _ K => i=j ∧ 1≤K)
+    (fun _ prev i j H K => (i=j ∧ 1≤K) ∨ ∃ v : Fin n,
+      i ≤ v.val ∧ v.val < j ∧ w v ≤ H ∧ ∃ a c : ℕ,
+        2^(w v-1)*(a+c) ≤ K ∧ prev i v.val (H-w v) a ∧ prev (v.val+1) j (H-w v) c)
+
+lemma tabR_zero {n : ℕ} {w : Fin n → ℕ} (i j H K : ℕ) :
+    tabR n w 0 i j H K ↔ (i = j ∧ 1 ≤ K) := Iff.rfl
+
+lemma tabR_succ {n : ℕ} {w : Fin n → ℕ} (f i j H K : ℕ) :
+    tabR n w (f+1) i j H K ↔ ((i=j ∧ 1≤K) ∨ ∃ v : Fin n,
+      i ≤ v.val ∧ v.val < j ∧ w v ≤ H ∧ ∃ a c : ℕ,
+        2^(w v-1)*(a+c) ≤ K ∧ tabR n w f i v.val (H-w v) a ∧ tabR n w f (v.val+1) j (H-w v) c) :=
+  Iff.rfl
+
+lemma tabR_mono {n : ℕ} {w : Fin n → ℕ} :
+    ∀ (f i j H K H' K' : ℕ), tabR n w f i j H K → H ≤ H' → K ≤ K' → tabR n w f i j H' K' := by
+  intro f
+  induction f with
+  | zero =>
+    intro i j H K H' K' h _ hK
+    rw [tabR_zero] at h ⊢
+    exact ⟨h.1, le_trans h.2 hK⟩
+  | succ f ih =>
+    intro i j H K H' K' h hH hK
+    rw [tabR_succ] at h ⊢
+    rcases h with h | ⟨v, hiv, hvj, hw, a, c, hac, ha, hc⟩
+    · exact Or.inl ⟨h.1, le_trans h.2 hK⟩
+    · refine Or.inr ⟨v, hiv, hvj, le_trans hw hH, a, c, le_trans hac hK, ?_, ?_⟩
+      · exact ih _ _ _ _ _ _ ha (by omega) le_rfl
+      · exact ih _ _ _ _ _ _ hc (by omega) le_rfl
+
+lemma tabR_fuel_succ {n : ℕ} {w : Fin n → ℕ} :
+    ∀ (f i j H K : ℕ), tabR n w f i j H K → tabR n w (f+1) i j H K := by
+  intro f
+  induction f with
+  | zero =>
+    intro i j H K h
+    rw [tabR_zero] at h
+    rw [tabR_succ]
+    exact Or.inl h
+  | succ f ih =>
+    intro i j H K h
+    rw [tabR_succ] at h
+    rw [tabR_succ]
+    rcases h with h | ⟨v, hiv, hvj, hw, a, c, hac, ha, hc⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨v, hiv, hvj, hw, a, c, hac, ih _ _ _ _ ha, ih _ _ _ _ hc⟩
+
+lemma tabR_fuel_le {n : ℕ} {w : Fin n → ℕ} (f f' i j H K : ℕ) (hf : f ≤ f')
+    (h : tabR n w f i j H K) : tabR n w f' i j H K := by
+  induction hf with
+  | refl => exact h
+  | step _ ih => exact tabR_fuel_succ _ _ _ _ _ ih
+
+def atV (n : ℕ) (hn : 0 < n) (i : ℕ) : Fin n := ⟨i % n, Nat.mod_lt _ hn⟩
+
+def pathF (n : ℕ) (hn : 0 < n) : Set (PEqualNP.ProofComplexity.Clause (Fin n)) := {C |
+    C = {(atV n hn 0,true)} ∨ C = {(atV n hn (n-1),false)} ∨
+      ∃ i : ℕ, i+1 < n ∧ C = {(atV n hn i,false),(atV n hn (i+1),true)}}
+
+def ctxF {n : ℕ} (i j : ℕ) (lit : Fin n × Bool) : Prop :=
+  (lit.1.val + 1 = i ∧ lit.2 = false) ∨ (lit.1.val = j ∧ lit.2 = true)
+
+lemma sum_map_ge_length {n : ℕ} {w : Fin n → ℕ} (hw : ∀ i, 0 < w i) :
+    ∀ L : List (Fin n), L.length ≤ (L.map w).sum := by
+  intro L
+  induction L with
+  | nil => simp
+  | cons x L ih =>
+    simp only [List.length_cons, List.map_cons, List.sum_cons]
+    have := hw x
+    omega
+
+lemma trace_length {V : Type} (q : List Bool → V) (p : List Bool) : (trace q p).length = p.length := by
+  simp [trace]
+
+lemma build_leaf {n : ℕ} (hn : 0 < n) (w : Fin n → ℕ) (i H K : ℕ) (hK : 1 ≤ K) (hi : i ≤ n) :
+    ∃ (M A : Finset (List Bool)) (q : List Bool → Fin n),
+      shape M A ∧
+      (∀ p ∈ M, (trace q p).Nodup ∧ (∀ x ∈ trace q p, i ≤ x.val ∧ x.val < i) ∧
+        ((trace q p).map w).sum ≤ H) ∧
+      (∀ p ∈ M \ A, ∃ C ∈ pathF n hn, ∀ lit ∈ C, ctxF i i lit ∨
+        ∃ k : Fin p.length, q (p.take k.val) = lit.1 ∧ p.get k ≠ lit.2) ∧
+      (M \ A).sum (fun p => 2^(((trace q p).map w).sum - p.length)) ≤ K := by
+  refine ⟨{[]}, ∅, fun _ => ⟨0, hn⟩, shape_leaf, ?_, ?_, ?_⟩
+  · intro p hp
+    rw [Finset.mem_singleton] at hp
+    subst hp
+    simp [trace]
+  · intro p hp
+    rw [Finset.sdiff_empty, Finset.mem_singleton] at hp
+    subst hp
+    by_cases h0 : i = 0
+    · subst h0
+      refine ⟨{(atV n hn 0, true)}, Or.inl rfl, ?_⟩
+      intro lit hlit
+      rw [Finset.mem_singleton] at hlit
+      subst hlit
+      left; right
+      simp [atV]
+    · by_cases hN : i = n
+      · subst hN
+        refine ⟨{(atV i hn (i-1), false)}, Or.inr (Or.inl rfl), ?_⟩
+        intro lit hlit
+        rw [Finset.mem_singleton] at hlit
+        subst hlit
+        left; left
+        refine ⟨?_, rfl⟩
+        simp only [atV]
+        rw [Nat.mod_eq_of_lt (by omega)]
+        omega
+      · refine ⟨{(atV n hn (i-1), false), (atV n hn (i-1+1), true)},
+          Or.inr (Or.inr ⟨i-1, by omega, rfl⟩), ?_⟩
+        intro lit hlit
+        rw [Finset.mem_insert, Finset.mem_singleton] at hlit
+        rcases hlit with rfl | rfl
+        · left; left
+          refine ⟨?_, rfl⟩
+          simp only [atV]
+          rw [Nat.mod_eq_of_lt (by omega)]
+          omega
+        · left; right
+          refine ⟨?_, rfl⟩
+          simp only [atV]
+          rw [Nat.mod_eq_of_lt (by omega)]
+          omega
+  · rw [Finset.sdiff_empty, Finset.sum_singleton]
+    simpa [trace] using hK
+
+lemma cons_take_succ (b : Bool) (t : List Bool) (k : ℕ) : (b :: t).take (k+1) = b :: t.take k := rfl
+
+lemma build {n : ℕ} (hn : 0 < n) (w : Fin n → ℕ) (hw : ∀ i, 0 < w i) :
+    ∀ (f i j H K : ℕ), tabR n w f i j H K → i ≤ j → j ≤ n →
+    ∃ (M A : Finset (List Bool)) (q : List Bool → Fin n),
+      shape M A ∧
+      (∀ p ∈ M, (trace q p).Nodup ∧ (∀ x ∈ trace q p, i ≤ x.val ∧ x.val < j) ∧
+        ((trace q p).map w).sum ≤ H) ∧
+      (∀ p ∈ M \ A, ∃ C ∈ pathF n hn, ∀ lit ∈ C, ctxF i j lit ∨
+        ∃ k : Fin p.length, q (p.take k.val) = lit.1 ∧ p.get k ≠ lit.2) ∧
+      (M \ A).sum (fun p => 2^(((trace q p).map w).sum - p.length)) ≤ K := by
+  intro f
+  induction f with
+  | zero =>
+    intro i j H K h hij hjn
+    rw [tabR_zero] at h
+    obtain ⟨rfl, hK⟩ := h
+    exact build_leaf hn w i H K hK hjn
+  | succ f ih =>
+    intro i j H K h hij hjn
+    rw [tabR_succ] at h
+    rcases h with ⟨rfl, hK⟩ | ⟨v, hiv, hvj, hwv, a, c, hac, ha, hc⟩
+    · exact build_leaf hn w i H K hK hjn
+    obtain ⟨M0, A0, q0, hsh0, hM0, hL0, hS0⟩ := ih i v.val (H - w v) a ha hiv (by omega)
+    obtain ⟨M1, A1, q1, hsh1, hM1, hL1, hS1⟩ := ih (v.val+1) j (H - w v) c hc (by omega) hjn
+    let q : List Bool → Fin n := fun l => match l with | [] => v | false :: t => q0 t | true :: t => q1 t
+    refine ⟨insert [] (M0.image (false :: ·) ∪ M1.image (true :: ·)),
+      insert [] (A0.image (false :: ·) ∪ A1.image (true :: ·)), q, shape_combine hsh0 hsh1, ?_, ?_, ?_⟩
+    · intro p hp
+      simp only [Finset.mem_insert, Finset.mem_union, Finset.mem_image] at hp
+      rcases hp with rfl | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+      · simp [trace]
+      · have htr : trace q (false :: t) = v :: trace q0 t := trace_cons v q0 q1 false t
+        obtain ⟨hnd, hrg, hsm⟩ := hM0 t ht
+        rw [htr]
+        refine ⟨List.nodup_cons.mpr ⟨fun hv => by have := hrg v hv; omega, hnd⟩, ?_, ?_⟩
+        · intro x hx
+          rcases List.mem_cons.mp hx with rfl | hx
+          · exact ⟨hiv, hvj⟩
+          · have := hrg x hx; omega
+        · simp only [List.map_cons, List.sum_cons]
+          omega
+      · have htr : trace q (true :: t) = v :: trace q1 t := trace_cons v q0 q1 true t
+        obtain ⟨hnd, hrg, hsm⟩ := hM1 t ht
+        rw [htr]
+        refine ⟨List.nodup_cons.mpr ⟨fun hv => by have := hrg v hv; omega, hnd⟩, ?_, ?_⟩
+        · intro x hx
+          rcases List.mem_cons.mp hx with rfl | hx
+          · exact ⟨hiv, hvj⟩
+          · have := hrg x hx; omega
+        · simp only [List.map_cons, List.sum_cons]
+          omega
+    · intro p hp
+      rw [sdiff_combine] at hp
+      simp only [Finset.mem_union, Finset.mem_image] at hp
+      rcases hp with ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+      · obtain ⟨C, hCF, hC⟩ := hL0 t ht
+        refine ⟨C, hCF, fun lit hlit => ?_⟩
+        rcases hC lit hlit with (⟨h1, h2⟩ | ⟨h1, h2⟩) | ⟨k, hk1, hk2⟩
+        · exact Or.inl (Or.inl ⟨h1, h2⟩)
+        · right
+          refine ⟨⟨0, by simp⟩, ?_, ?_⟩
+          · show v = lit.1
+            exact Fin.ext h1.symm
+          · simp [h2]
+        · right
+          refine ⟨⟨k.val+1, by simp⟩, ?_, ?_⟩
+          · show q (false :: t.take k.val) = lit.1
+            exact hk1
+          · simpa using hk2
+      · obtain ⟨C, hCF, hC⟩ := hL1 t ht
+        refine ⟨C, hCF, fun lit hlit => ?_⟩
+        rcases hC lit hlit with (⟨h1, h2⟩ | ⟨h1, h2⟩) | ⟨k, hk1, hk2⟩
+        · right
+          refine ⟨⟨0, by simp⟩, ?_, ?_⟩
+          · show v = lit.1
+            exact Fin.ext (by omega)
+          · simp [h2]
+        · exact Or.inl (Or.inr ⟨h1, h2⟩)
+        · right
+          refine ⟨⟨k.val+1, by simp⟩, ?_, ?_⟩
+          · show q (true :: t.take k.val) = lit.1
+            exact hk1
+          · simpa using hk2
+    · rw [sdiff_combine, Finset.sum_union (disjoint_cons_images _ _),
+        Finset.sum_image (fun _ _ _ _ h => List.cons_injective h),
+        Finset.sum_image (fun _ _ _ _ h => List.cons_injective h)]
+      have key : ∀ (qb : List Bool → Fin n) (b : Bool) (t : List Bool),
+          trace q (b :: t) = v :: trace qb t →
+          2 ^ (((trace q (b :: t)).map w).sum - (b :: t).length) =
+            2 ^ (w v - 1) * 2 ^ (((trace qb t).map w).sum - t.length) := by
+        intro qb b t htr
+        rw [htr, ← pow_add]
+        congr 1
+        have h1 := sum_map_ge_length hw (trace qb t)
+        rw [trace_length] at h1
+        have h2 := hw v
+        simp only [List.map_cons, List.sum_cons, List.length_cons]
+        omega
+      rw [Finset.sum_congr rfl (fun t _ => key q0 false t (trace_cons v q0 q1 false t)),
+        Finset.sum_congr rfl (fun t _ => key q1 true t (trace_cons v q0 q1 true t)),
+        ← Finset.mul_sum, ← Finset.mul_sum, ← mul_add]
+      calc 2 ^ (w v - 1) * (_ + _) ≤ 2 ^ (w v - 1) * (a + c) :=
+            Nat.mul_le_mul_left _ (Nat.add_le_add hS0 hS1)
+        _ ≤ K := hac
+
+lemma trace_snoc {V : Type} (q : List Bool → V) (p : List Bool) (b : Bool) :
+    trace q (p ++ [b]) = trace q p ++ [q p] := by
+  apply List.ext_getElem
+  · simp [trace]
+  · intro idx h1 h2
+    by_cases hidx : idx < p.length
+    · rw [List.getElem_append_left (by simpa [trace] using hidx)]
+      simp only [trace, List.getElem_ofFn, List.take_append_of_le_length (le_of_lt hidx)]
+    · have hidx_eq : idx = p.length := by simp [trace] at h1; omega
+      subst hidx_eq
+      rw [List.getElem_append_right (by simp [trace])]
+      simp only [trace, List.getElem_ofFn, List.length_ofFn, Nat.sub_self,
+        List.getElem_singleton, List.take_left']
+
+lemma ctx_child {n : ℕ} (q : List Bool → Fin n) (p : List Bool) (b : Bool) (P : Fin n → Bool → Prop)
+    (hold : ∀ k : Fin p.length, P (q (p.take k.val)) (p.get k)) (hnew : P (q p) b) :
+    ∀ k : Fin (p ++ [b]).length, P (q ((p ++ [b]).take k.val)) ((p ++ [b]).get k) := by
+  intro k
+  by_cases hk : k.val < p.length
+  · have h := hold ⟨k.val, hk⟩
+    rw [List.take_append_of_le_length (le_of_lt hk)]
+    have hg : (p ++ [b]).get k = p.get ⟨k.val, hk⟩ := by
+      simp [List.get_eq_getElem, List.getElem_append_left hk]
+    rw [hg]
+    exact h
+  · have hk2 : k.val = p.length := by have := k.isLt; simp at this; omega
+    have ht : (p ++ [b]).take k.val = p := by rw [hk2]; exact List.take_left' rfl
+    have hg : (p ++ [b]).get k = b := by
+      simp [List.get_eq_getElem, hk2]
+    rw [ht, hg]
+    exact hnew
+
+lemma adversary {n : ℕ} (hn : 0 < n) (w : Fin n → ℕ) (hw : ∀ i, 0 < w i)
+    (M A : Finset (List Bool)) (q : List Bool → Fin n) (H : ℕ)
+    (hsh : shape M A)
+    (hM : ∀ p ∈ M, (trace q p).Nodup ∧ ((trace q p).map w).sum ≤ H)
+    (hleaf : ∀ p ∈ M \ A, ∃ C ∈ pathF n hn, ∀ lit ∈ C, ∃ k : Fin p.length,
+      q (p.take k.val) = lit.1 ∧ p.get k ≠ lit.2) :
+    ∀ (d : ℕ) (p : List Bool), p ∈ M → n - p.length ≤ d → ∀ i j : ℕ, i ≤ j → j ≤ n →
+      (∀ k : Fin p.length, ((q (p.take k.val)).val < i ∧ p.get k = true) ∨
+          (j ≤ (q (p.take k.val)).val ∧ p.get k = false)) →
+      ∃ a : ℕ, tabR n w (j - i) i j (H - ((trace q p).map w).sum) a ∧
+        a * 2 ^ (((trace q p).map w).sum - p.length) ≤
+          ((M \ A).filter (fun r => p <+: r)).sum (fun r => 2 ^ (((trace q r).map w).sum - r.length)) := by
+  -- a leaf can only sit on an empty interval
+  have leaf_case : ∀ (p : List Bool), p ∈ M → p ∉ A → ∀ i j : ℕ, i ≤ j → j ≤ n →
+      (∀ k : Fin p.length, ((q (p.take k.val)).val < i ∧ p.get k = true) ∨
+          (j ≤ (q (p.take k.val)).val ∧ p.get k = false)) →
+      ∃ a : ℕ, tabR n w (j - i) i j (H - ((trace q p).map w).sum) a ∧
+        a * 2 ^ (((trace q p).map w).sum - p.length) ≤
+          ((M \ A).filter (fun r => p <+: r)).sum (fun r => 2 ^ (((trace q r).map w).sum - r.length)) := by
+    intro p hp hnA i j hij hjn hctx
+    have hmem : p ∈ M \ A := Finset.mem_sdiff.mpr ⟨hp, hnA⟩
+    obtain ⟨C, hCF, hC⟩ := hleaf p hmem
+    have hij' : i = j := by
+      rcases hCF with rfl | rfl | ⟨i0, hi0, rfl⟩
+      · obtain ⟨k, hk1, hk2⟩ := hC _ (Finset.mem_singleton_self _)
+        rcases hctx k with ⟨_, h2⟩ | ⟨h1, _⟩
+        · exact absurd h2 hk2
+        · rw [hk1] at h1
+          simp only [atV, Nat.zero_mod] at h1
+          omega
+      · obtain ⟨k, hk1, hk2⟩ := hC _ (Finset.mem_singleton_self _)
+        rcases hctx k with ⟨h1, _⟩ | ⟨_, h2⟩
+        · rw [hk1] at h1
+          simp only [atV] at h1
+          rw [Nat.mod_eq_of_lt (by omega)] at h1
+          omega
+        · exact absurd h2 hk2
+      · obtain ⟨k, hk1, hk2⟩ := hC (atV n hn i0, false) (by simp)
+        obtain ⟨k', hk1', hk2'⟩ := hC (atV n hn (i0+1), true) (by simp)
+        have ha : i0 < i := by
+          rcases hctx k with ⟨h1, _⟩ | ⟨_, h2⟩
+          · rw [hk1] at h1
+            simp only [atV] at h1
+            rw [Nat.mod_eq_of_lt (by omega)] at h1
+            exact h1
+          · exact absurd h2 hk2
+        have hb : j ≤ i0 + 1 := by
+          rcases hctx k' with ⟨_, h2⟩ | ⟨h1, _⟩
+          · exact absurd h2 hk2'
+          · rw [hk1'] at h1
+            simp only [atV] at h1
+            rw [Nat.mod_eq_of_lt hi0] at h1
+            exact h1
+        omega
+    subst hij'
+    refine ⟨1, ?_, ?_⟩
+    · rw [Nat.sub_self, tabR_zero]
+      exact ⟨rfl, le_rfl⟩
+    · rw [one_mul]
+      have hmp : p ∈ (M \ A).filter (fun r => p <+: r) :=
+        Finset.mem_filter.mpr ⟨hmem, List.prefix_refl p⟩
+      exact Finset.single_le_sum
+        (f := fun r => 2 ^ (((trace q r).map w).sum - r.length))
+        (fun _ _ => Nat.zero_le _) hmp
+  intro d
+  induction d with
+  | zero =>
+    intro p hp hd i j hij hjn hctx
+    by_cases hpA : p ∈ A
+    · exfalso
+      have hp0 := (hsh.2.2.2 p hpA).1
+      have hnod := (hM (p ++ [false]) hp0).1
+      have hlen_le : (trace q (p ++ [false])).length ≤ Fintype.card (Fin n) :=
+        List.Nodup.length_le_card hnod
+      rw [trace_length] at hlen_le
+      simp at hlen_le
+      omega
+    · exact leaf_case p hp hpA i j hij hjn hctx
+  | succ d ih =>
+    intro p hp hd i j hij hjn hctx
+    by_cases hpA : p ∈ A
+    swap
+    · exact leaf_case p hp hpA i j hij hjn hctx
+    have hp0 : p ++ [false] ∈ M := (hsh.2.2.2 p hpA).1
+    have hp1 : p ++ [true] ∈ M := (hsh.2.2.2 p hpA).2
+    have hnod0 := (hM (p ++ [false]) hp0).1
+    have hlenlt : p.length < n := by
+      have hlen_le : (trace q (p ++ [false])).length ≤ Fintype.card (Fin n) :=
+        List.Nodup.length_le_card hnod0
+      rw [trace_length] at hlen_le
+      simp at hlen_le
+      omega
+    have hlen0 : n - (p ++ [false]).length ≤ d := by simp; omega
+    have hlen1 : n - (p ++ [true]).length ≤ d := by simp; omega
+    set v := q p with hv
+    set s := ((trace q p).map w).sum with hs
+    have hsum_step : ∀ b : Bool, ((trace q (p ++ [b])).map w).sum = s + w v := by
+      intro b
+      rw [trace_snoc, List.map_append, List.sum_append, List.map_singleton, List.sum_singleton]
+    have hsH : s + w v ≤ H := by rw [← hsum_step false]; exact (hM _ hp0).2
+    have hsl : p.length ≤ s := by
+      have := sum_map_ge_length hw (trace q p)
+      rw [trace_length] at this
+      exact this
+    have hwv := hw v
+    have hexp : ∀ b : Bool, ((trace q (p ++ [b])).map w).sum - (p ++ [b]).length =
+        (s - p.length) + (w v - 1) := by
+      intro b
+      rw [hsum_step b]
+      simp only [List.length_append, List.length_singleton]
+      omega
+    have hsubset : ∀ b : Bool, (M \ A).filter (fun r => p ++ [b] <+: r) ⊆ (M \ A).filter (fun r => p <+: r) := by
+      intro b r hr
+      simp only [Finset.mem_filter] at hr ⊢
+      exact ⟨hr.1, List.IsPrefix.trans (List.prefix_append p [b]) hr.2⟩
+    have hdisj : Disjoint ((M \ A).filter (fun r => p ++ [false] <+: r))
+        ((M \ A).filter (fun r => p ++ [true] <+: r)) := by
+      rw [Finset.disjoint_left]
+      intro r hq0 hq1
+      obtain ⟨t0, ht0⟩ := (Finset.mem_filter.mp hq0).2
+      obtain ⟨t1, ht1⟩ := (Finset.mem_filter.mp hq1).2
+      have heq := ht0.trans ht1.symm
+      rw [List.append_assoc, List.append_assoc] at heq
+      have htail := List.append_cancel_left heq
+      exact Bool.noConfusion (List.cons.inj htail).1
+    let S := fun (P : List Bool) =>
+      ((M \ A).filter (fun r => P <+: r)).sum (fun r => 2 ^ (((trace q r).map w).sum - r.length))
+    have hS01 : S (p ++ [false]) + S (p ++ [true]) ≤ S p := by
+      show ((M \ A).filter (fun r => p ++ [false] <+: r)).sum _ +
+        ((M \ A).filter (fun r => p ++ [true] <+: r)).sum _ ≤ _
+      rw [← Finset.sum_union hdisj]
+      exact Finset.sum_le_sum_of_subset (Finset.union_subset (hsubset false) (hsubset true))
+    have hS0 : S (p ++ [false]) ≤ S p := by omega
+    have hS1 : S (p ++ [true]) ≤ S p := by omega
+    by_cases hvi : v.val < i
+    · -- the adversary answers true
+      have hctx1 := ctx_child q p true
+        (fun x b => (x.val < i ∧ b = true) ∨ (j ≤ x.val ∧ b = false)) hctx (Or.inl ⟨hvi, rfl⟩)
+      obtain ⟨c, hc, hcS⟩ := ih (p ++ [true]) hp1 hlen1 i j hij hjn hctx1
+      refine ⟨c * 2 ^ (w v - 1), ?_, ?_⟩
+      · refine tabR_mono _ _ _ _ _ _ _ hc ?_ ?_
+        · rw [hsum_step true]; omega
+        · exact Nat.le_mul_of_pos_right _ (pow_pos (by norm_num) _)
+      · rw [hexp true] at hcS
+        calc c * 2 ^ (w v - 1) * 2 ^ (s - p.length) = c * 2 ^ (s - p.length + (w v - 1)) := by
+              rw [pow_add]; ring
+          _ ≤ S (p ++ [true]) := hcS
+          _ ≤ S p := hS1
+    by_cases hvj : j ≤ v.val
+    · -- the adversary answers false
+      have hctx0 := ctx_child q p false
+        (fun x b => (x.val < i ∧ b = true) ∨ (j ≤ x.val ∧ b = false)) hctx (Or.inr ⟨hvj, rfl⟩)
+      obtain ⟨c, hc, hcS⟩ := ih (p ++ [false]) hp0 hlen0 i j hij hjn hctx0
+      refine ⟨c * 2 ^ (w v - 1), ?_, ?_⟩
+      · refine tabR_mono _ _ _ _ _ _ _ hc ?_ ?_
+        · rw [hsum_step false]; omega
+        · exact Nat.le_mul_of_pos_right _ (pow_pos (by norm_num) _)
+      · rw [hexp false] at hcS
+        calc c * 2 ^ (w v - 1) * 2 ^ (s - p.length) = c * 2 ^ (s - p.length + (w v - 1)) := by
+              rw [pow_add]; ring
+          _ ≤ S (p ++ [false]) := hcS
+          _ ≤ S p := hS0
+    -- the query splits the interval
+    replace hvi : i ≤ v.val := by omega
+    replace hvj : v.val < j := by omega
+    have hctx0 := ctx_child q p false
+      (fun x b => (x.val < i ∧ b = true) ∨ (v.val ≤ x.val ∧ b = false))
+      (fun k => (hctx k).imp id (fun h => ⟨by omega, h.2⟩)) (Or.inr ⟨le_rfl, rfl⟩)
+    have hctx1 := ctx_child q p true
+      (fun x b => (x.val < v.val + 1 ∧ b = true) ∨ (j ≤ x.val ∧ b = false))
+      (fun k => (hctx k).imp (fun h => ⟨by omega, h.2⟩) id) (Or.inl ⟨by omega, rfl⟩)
+    obtain ⟨a, ha, haS⟩ := ih (p ++ [false]) hp0 hlen0 i v.val hvi (by omega) hctx0
+    obtain ⟨c, hc, hcS⟩ := ih (p ++ [true]) hp1 hlen1 (v.val + 1) j (by omega) hjn hctx1
+    refine ⟨2 ^ (w v - 1) * (a + c), ?_, ?_⟩
+    · have hji : j - i = (j - i - 1) + 1 := by omega
+      rw [hji, tabR_succ]
+      right
+      refine ⟨v, hvi, hvj, by omega, a, c, le_rfl, ?_, ?_⟩
+      · rw [hsum_step false] at ha
+        have h' : H - s - w v = H - (s + w v) := by omega
+        rw [h']
+        exact tabR_fuel_le _ _ _ _ _ _ (by omega) ha
+      · rw [hsum_step true] at hc
+        have h' : H - s - w v = H - (s + w v) := by omega
+        rw [h']
+        exact tabR_fuel_le _ _ _ _ _ _ (by omega) hc
+    · rw [hexp false] at haS
+      rw [hexp true] at hcS
+      calc 2 ^ (w v - 1) * (a + c) * 2 ^ (s - p.length)
+          = a * 2 ^ (s - p.length + (w v - 1)) + c * 2 ^ (s - p.length + (w v - 1)) := by
+            rw [pow_add]; ring
+        _ ≤ S (p ++ [false]) + S (p ++ [true]) := Nat.add_le_add haS hcS
+        _ ≤ S p := hS01
+
+lemma path_iff {n : ℕ} (hn : 0 < n) (w : Fin n → ℕ) (hw : ∀ i, 0 < w i) (H K : ℕ) :
+    (∃ (M A : Finset (List Bool)) (q : List Bool → Fin n),
+        shape M A ∧ (∀ p ∈ M, (trace q p).Nodup ∧ ((trace q p).map w).sum ≤ H) ∧
+        (∀ p ∈ M \ A, ∃ C ∈ pathF n hn, ∀ lit ∈ C, ∃ j : Fin p.length,
+          q (p.take j.val) = lit.1 ∧ p.get j ≠ lit.2) ∧
+        (M \ A).sum (fun p => 2^(((trace q p).map w).sum - p.length)) ≤ K) ↔
+      tabR n w n 0 n H K := by
+  constructor
+  · rintro ⟨M, A, q, hsh, hM, hleaf, hsum⟩
+    obtain ⟨a, ha, haS⟩ := adversary hn w hw M A q H hsh hM hleaf n [] hsh.1 (by simp) 0 n
+      (Nat.zero_le _) le_rfl (fun k => absurd k.isLt (by simp))
+    have h0 : ((trace q []).map w).sum = 0 := by simp [trace]
+    rw [h0, Nat.sub_zero, Nat.sub_zero] at ha
+    rw [h0] at haS
+    simp only [List.length_nil, Nat.sub_zero, pow_zero, mul_one] at haS
+    have hall : (M \ A).filter (fun r => [] <+: r) = M \ A :=
+      Finset.filter_true_of_mem (fun r _ => List.nil_prefix)
+    rw [hall] at haS
+    exact tabR_mono _ _ _ _ _ _ _ ha le_rfl (le_trans haS hsum)
+  · intro h
+    obtain ⟨M, A, q, hsh, hM, hleaf, hsum⟩ := build hn w hw n 0 n H K h (Nat.zero_le _) le_rfl
+    refine ⟨M, A, q, hsh, fun p hp => ⟨(hM p hp).1, (hM p hp).2.2⟩, ?_, hsum⟩
+    intro p hp
+    obtain ⟨C, hCF, hC⟩ := hleaf p hp
+    refine ⟨C, hCF, fun lit hlit => ?_⟩
+    rcases hC lit hlit with (⟨h1, _⟩ | ⟨h1, _⟩) | hk
+    · omega
+    · exact absurd h1 (Nat.ne_of_lt lit.1.isLt)
+    · exact hk
+
+end PEqualNP.Outside.L_pcx_306_aux
+
+theorem PEqualNP.Outside.L_pcx_306 : ∀ (n : ℕ) (hn : 0 < n) (w : Fin n → ℕ), (∀ i, 0 < w i) →
+  let Raw := (i : Fin n) × Fin (w i)
+  let parity := fun (y : Raw → Bool) (i : Fin n) =>
+    decide (Odd ((Finset.univ : Finset (Fin (w i))).filter (fun j => y ⟨i,j⟩ = true)).card)
+  let liftAx := fun (F : Set (PEqualNP.ProofComplexity.Clause (Fin n)))
+      (A : PEqualNP.ProofComplexity.Clause Raw) =>
+    ∃ C ∈ F, ∃ y : Raw → Bool, (∀ lit ∈ C, parity y lit.1 ≠ lit.2) ∧
+      A = ((Finset.univ : Finset Raw).filter (fun b => b.1 ∈ C.image Prod.fst)).image
+        (fun b => (b, !(y b)))
+  let shape := fun (N J : Finset (List Bool)) =>
+    [] ∈ N ∧ J ⊆ N ∧
+    (∀ (p : List Bool) (b : Bool), p ++ [b] ∈ N → p ∈ J) ∧
+    ∀ p ∈ J, p ++ [false] ∈ N ∧ p ++ [true] ∈ N
+  let refutes := fun (F : Set (PEqualNP.ProofComplexity.Clause (Fin n))) (H K : ℕ) =>
+    ∃ (N J : Finset (List Bool)) (line : List Bool → PEqualNP.ProofComplexity.Clause Raw),
+      shape N J ∧ line [] = ∅ ∧ (∀ p ∈ N, p.length ≤ H) ∧ (N \ J).card ≤ K ∧
+      (∀ p ∈ N \ J, liftAx F (line p)) ∧
+      ∀ p ∈ J, PEqualNP.ProofComplexity.IsResolvent
+        (line (p ++ [false])) (line (p ++ [true])) (line p)
+  let atV := fun i : ℕ => (⟨i % n, Nat.mod_lt _ hn⟩ : Fin n)
+  let F : Set (PEqualNP.ProofComplexity.Clause (Fin n)) := {C |
+    C = {(atV 0,true)} ∨ C = {(atV (n-1),false)} ∨
+      ∃ i : ℕ, i+1 < n ∧ C = {(atV i,false),(atV (i+1),true)}}
+  let tab : ℕ → ℕ → ℕ → ℕ → ℕ → Prop := Nat.rec
+    (fun i j _ K => i=j ∧ 1≤K)
+    (fun _ prev i j H K => (i=j ∧ 1≤K) ∨ ∃ v : Fin n,
+      i ≤ v.val ∧ v.val < j ∧ w v ≤ H ∧ ∃ a c : ℕ,
+        2^(w v-1)*(a+c) ≤ K ∧ prev i v.val (H-w v) a ∧ prev (v.val+1) j (H-w v) c)
+  ∀ H K : ℕ, Iff (refutes F H K) (tab n 0 n H K) := by
+  intro n hn w hw
+  intro Raw parity liftAx shape refutes atV F tab H K
+  have T := PEqualNP.Outside.L_pcx_306_aux.transfer n hn w hw
+  exact (T F H K).trans (PEqualNP.Outside.L_pcx_306_aux.path_iff hn w hw H K)
