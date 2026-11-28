@@ -1,0 +1,5218 @@
+import PEqualNP.Defs
+import Mathlib.Data.Finset.Sort
+import Mathlib.Data.List.OfFn
+import Mathlib.Data.List.Nodup
+import Mathlib.Data.List.Forall2
+import Mathlib.Data.Nat.Bitwise
+import Mathlib.Data.Fintype.Pi
+import Mathlib.Tactic.FinCases
+import Mathlib.Data.List.Sublists
+import Mathlib.Tactic.ByContra
+import Mathlib.Tactic.GRewrite
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.SplitIfs
+import Mathlib.Tactic.Tauto
+namespace PEqualNP.Outside.L_meta_51392
+open PEqualNP.MetaComplexity PEqualNP.CircuitLowerBounds
+namespace ForestCore
+def pn (a b : Nat) : Nat := a * 1000000000000000000 + b
+open PEqualNP.CircuitLowerBounds
+private def word80 (xs : List Nat) : Nat :=
+  xs.foldl (fun a b => (a <<< 80) ||| b) 0
+abbrev Sig := BitVec 512
+def zero : Sig := 0
+def one : Sig := BitVec.allOnes 512
+def neg (a : Sig) : Sig := ~~~a
+def bin (d : Nat) (a b : Sig) : Sig :=
+  if d=0 then a &&& b else if d=1 then a ||| b else if d=2 then a &&& ~~~b else ~~~a &&& b
+def proper (a : Sig) : Prop := a ≠ zero ∧ a ≠ one
+def allowed (u : Bool) (d : Nat) : Prop := d<2 ∨ (u=true ∧ d<4)
+def flipOp (d : Nat) := if d=2 then 3 else if d=3 then 2 else d
+theorem allowed_four {u d} (h : allowed u d) : d=0 ∨ d=1 ∨ (u=true ∧ d=2) ∨ (u=true ∧ d=3) := by
+  rcases h with h | ⟨h,j⟩
+  · omega
+  · have : d=0 ∨ d=1 ∨ d=2 ∨ d=3 := by omega
+    rcases this with h1 | h1 | h1 | h1
+    · exact Or.inl h1
+    · exact Or.inr (Or.inl h1)
+    · exact Or.inr (Or.inr (Or.inl ⟨h,h1⟩))
+    · exact Or.inr (Or.inr (Or.inr ⟨h,h1⟩))
+theorem bin_flip {u d} (h : allowed u d) (a b : Sig) : bin d a b = bin (flipOp d) b a := by
+  rcases allowed_four h with rfl | rfl | ⟨_,rfl⟩ | ⟨_,rfl⟩ <;> simp [bin,flipOp,BitVec.and_comm,BitVec.or_comm]
+theorem flip_flip {u d} (h : allowed u d) : allowed u (flipOp d) ∧ flipOp (flipOp d)=d := by
+  rcases allowed_four h with rfl | rfl | ⟨hu,rfl⟩ | ⟨hu,rfl⟩
+  all_goals simp_all [flipOp,allowed]
+def Live (u : Bool) (target : Sig) : Nat → Finset Sig → Prop
+  | 0,S => S={target} ∧ proper target
+  | k+1,S => ∃ (U : Finset Sig) (a b : Sig) (d : Nat), allowed u d ∧ S=insert a (insert b U) ∧
+      proper a ∧ proper b ∧ a ≠ b ∧
+      bin d a b ∉ insert a (insert b U) ∧ Live u target k (insert (bin d a b) U)
+theorem Live.stop {u} {target : Sig} (hp : proper target) : Live u target 0 {target} := ⟨rfl,hp⟩
+theorem Live.binary {u} {target : Sig} {k : Nat} {U : Finset Sig} {a b : Sig} {d : Nat} (hd : allowed u d)
+    (ha : proper a) (hb : proper b) (hab : a ≠ b)
+    (hfresh : bin d a b ∉ insert a (insert b U)) (tail : Live u target k (insert (bin d a b) U)) :
+    Live u target (k+1) (insert a (insert b U)) :=
+  ⟨U,a,b,d,hd,rfl,ha,hb,hab,hfresh,tail⟩
+theorem Live.ind {u} {target : Sig} {motive : ∀ (k : Nat) (S : Finset Sig), Live u target k S → Prop}
+    (stop : ∀ (hp : proper target), motive 0 {target} (Live.stop hp))
+    (binary : ∀ {k : Nat} {U : Finset Sig} {a b : Sig} {d : Nat} (hd : allowed u d)
+      (ha : proper a) (hb : proper b) (hab : a ≠ b)
+      (hfresh : bin d a b ∉ insert a (insert b U)) (tail : Live u target k (insert (bin d a b) U)),
+      motive k (insert (bin d a b) U) tail →
+      motive (k+1) (insert a (insert b U)) (Live.binary hd ha hb hab hfresh tail))
+    {k : Nat} {S : Finset Sig} (h : Live u target k S) : motive k S h := by
+  induction k generalizing S with
+  | zero =>
+    obtain ⟨rfl,hp⟩ := h
+    exact stop hp
+  | succ k ih =>
+    obtain ⟨U,a,b,d,hd,rfl,ha,hb,hab,hf,tail⟩ := h
+    exact binary hd ha hb hab hf tail (ih tail)
+private lemma live_proper {u target k S} (h : Live u target k S) : ∀ a ∈ S, proper a := by
+  induction h using Live.ind with
+  | stop hp => simpa using hp
+  | binary hd ha hb hab hf _ ih =>
+    simp only [Finset.forall_mem_insert]
+    exact ⟨ha,hb,fun a h => ih a (Finset.mem_insert_of_mem h)⟩
+private lemma live_size {u target k S} (h : Live u target k S) : S.card ≤ k+1 := by
+  induction h using Live.ind with
+  | stop hp => simp
+  | @binary k U a b d hd ha hb hab hf _ ih =>
+    have hu : bin d a b ∉ U := fun hm => hf (Finset.mem_insert_of_mem (Finset.mem_insert_of_mem hm))
+    rw [Finset.card_insert_of_notMem hu] at ih
+    have h1 := Finset.card_insert_le (a := a) (s := insert b U)
+    have h2 := Finset.card_insert_le (a := b) (s := U)
+    omega
+def bit (i : Fin 512) (a : Sig) : Bool := a.getLsbD i.val
+private lemma bit_zero (i) : bit i zero = false := by simp [bit,zero]
+private lemma bit_one (i) : bit i one = true := by unfold bit one; rw [BitVec.getLsbD_allOnes]; simp
+private lemma bit_neg (i) (a : Sig) : bit i (neg a) = !(bit i a) := by simp [bit,neg,i.isLt]
+private lemma bit_bin (i d) (a b : Sig) : bit i (bin d a b) =
+    (if d=0 then bit i a && bit i b else if d=1 then bit i a || bit i b else
+      if d=2 then bit i a && !(bit i b) else !(bit i a) && bit i b) := by
+  unfold bin
+  split_ifs <;> simp [bit]
+theorem bit_ext {a b : Sig} (h : ∀ i, bit i a = bit i b) : a=b :=
+  BitVec.eq_of_getLsbD_eq fun j hj => h ⟨j,hj⟩
+def nrm (u : Bool) (a : Sig) : Sig := if u && bit 0 a then neg a else a
+theorem nrm_false (a : Sig) : nrm false a = a := rfl
+theorem nrm_bit (a : Sig) : bit 0 (nrm true a) = false := by
+  cases h : bit 0 a <;> simp [nrm,h,bit_neg]
+theorem nrm_id {u} {a : Sig} (h : bit 0 a = false) : nrm u a = a := by simp [nrm,h]
+theorem neg_neg' (a : Sig) : neg (neg a) = a := by simp [neg]
+theorem nrm_neg (a : Sig) : nrm true (neg a) = nrm true a := by
+  cases h : bit 0 a <;> simp [nrm,h,bit_neg,neg_neg']
+theorem proper_neg {a : Sig} (h : proper (neg a)) : proper a := by
+  refine ⟨?_,?_⟩
+  · rintro rfl
+    exact h.2 (by simp [neg,zero,one])
+  · rintro rfl
+    exact h.1 (by simp [neg,zero,one])
+theorem proper_nrm {u} {a : Sig} (h : proper (nrm u a)) : proper a := by
+  unfold nrm at h
+  split at h
+  · exact proper_neg h
+  · exact h
+def prime (d : Bool) (a b : Sig) := if d then a ||| b else a &&& b
+theorem bit_prime (i) (d : Bool) (a b : Sig) : bit i (prime d a b) =
+    (if d then bit i a || bit i b else bit i a && bit i b) := by cases d <;> simp [prime,bit]
+theorem nrm_prime (d : Bool) (a b : Sig) :
+    ∃ e, e<4 ∧ nrm true (prime d a b) = bin e (nrm true a) (nrm true b) := by
+  refine ⟨if d then (if bit 0 a then (if bit 0 b then 0 else 2) else (if bit 0 b then 3 else 1))
+    else (if bit 0 a then (if bit 0 b then 1 else 3) else (if bit 0 b then 2 else 0)),?_,?_⟩
+  · split_ifs <;> omega
+  · apply bit_ext
+    intro i
+    cases d <;> cases ha : bit 0 a <;> cases hb : bit 0 b <;>
+      simp only [nrm,bit_prime,ha,hb,bit_bin,bit_neg,Bool.true_and,Bool.false_and,Bool.and_true,Bool.and_false,Bool.false_or,
+        Bool.or_false,Bool.true_or,Bool.or_true,Bool.false_eq_true,ite_true,ite_false] <;>
+      cases hx : bit i a <;> cases hy : bit i b <;> simp [hx,hy,bit_neg,bit_prime]
+def gv (w : List Sig) (g : Gate) : Sig :=
+  let xs := g.inputs.map (fun i => w.getD i zero)
+  match g.op with
+  | .and => xs.foldr (prime false) one
+  | .or => xs.foldr (prime true) zero
+  | .not => neg (xs.headD zero)
+  | _ => zero
+def execute (gs : List Gate) (w : List Sig) : List Sig :=
+  gs.foldl (fun l g => l ++ [gv l g]) w
+def represented (w : List Sig) (v : Sig) : Prop := v ∈ w ∨ ¬proper v
+def Repr (u : Bool) (w : List Sig) (v : Sig) : Prop := represented w (nrm u v)
+private lemma bin_laws (a : Sig) :
+    bin 0 a one = a ∧ bin 1 a zero = a ∧
+    bin 0 a zero = zero ∧ bin 1 a one = one ∧
+    bin 0 a a = a ∧ bin 1 a a = a ∧ bin 2 a a = zero ∧ bin 3 a a = zero ∧ bin 2 a zero = a ∧
+    bin 3 zero a = a ∧ bin 2 zero a = zero ∧ bin 3 a zero = zero ∧ bin 0 zero a = zero ∧ bin 1 zero a = a ∧
+    bin 0 one a = a ∧ bin 1 one a = one := by
+  refine ⟨?_,?_,?_,?_,?_,?_,?_,?_,?_,?_,?_,?_,?_,?_,?_,?_⟩ <;> apply bit_ext <;> intro i <;>
+    simp [bit_bin,bit_zero,bit_one]
+private lemma neg_laws : neg zero = one ∧ neg one = zero := by simp [neg,zero,one]
+private lemma operand_cases {w : List Sig} {a : Sig} (h : represented w a) :
+    a = zero ∨ a = one ∨ a ∈ w ∧ proper a := by
+  by_cases hz : a = zero
+  · exact Or.inl hz
+  by_cases ho : a = one
+  · exact Or.inr (Or.inl ho)
+  exact Or.inr (Or.inr ⟨h.resolve_right (fun x => x ⟨hz,ho⟩),hz,ho⟩)
+def witness (u : Bool) (w : List Sig) (z : Sig) : Prop :=
+  ∃ d a b, allowed u d ∧ a ∈ w ∧ b ∈ w ∧ proper a ∧ proper b ∧ a ≠ b ∧ z = bin d a b
+private lemma bin_rep {u w a b} (d : Nat) (hd : allowed u d) (ha : represented w a) (hb : represented w b)
+    (no : u=true → a ≠ one ∧ b ≠ one) :
+    represented w (bin d a b) ∨ witness u w (bin d a b) := by
+  have rz : represented w zero := Or.inr (fun h => h.1 rfl)
+  have ro : represented w one := Or.inr (fun h => h.2 rfl)
+  obtain ⟨a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16⟩ := bin_laws a
+  obtain ⟨b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15,b16⟩ := bin_laws b
+  by_cases he : a=b
+  · subst b
+    left
+    rcases allowed_four hd with rfl | rfl | ⟨_,rfl⟩ | ⟨_,rfl⟩
+    · exact a5.symm ▸ ha
+    · exact a6.symm ▸ ha
+    · exact a7.symm ▸ rz
+    · exact a8.symm ▸ rz
+  rcases operand_cases ha with rfl | rfl | ⟨ham,hap⟩
+  · left
+    rcases allowed_four hd with rfl | rfl | ⟨_,rfl⟩ | ⟨_,rfl⟩
+    · exact b13.symm ▸ rz
+    · exact b14.symm ▸ hb
+    · exact b11.symm ▸ rz
+    · exact b10.symm ▸ hb
+  · left
+    rcases allowed_four hd with rfl | rfl | ⟨hu,rfl⟩ | ⟨hu,rfl⟩
+    · exact b15.symm ▸ hb
+    · exact b16.symm ▸ ro
+    · exact absurd rfl (no hu).1
+    · exact absurd rfl (no hu).1
+  rcases operand_cases hb with rfl | rfl | ⟨hbm,hbp⟩
+  · left
+    rcases allowed_four hd with rfl | rfl | ⟨_,rfl⟩ | ⟨_,rfl⟩
+    · exact a3.symm ▸ rz
+    · exact a2.symm ▸ ha
+    · exact a9.symm ▸ ha
+    · exact a12.symm ▸ rz
+  · left
+    rcases allowed_four hd with rfl | rfl | ⟨hu,rfl⟩ | ⟨hu,rfl⟩
+    · exact a1.symm ▸ ha
+    · exact a4.symm ▸ ro
+    · exact absurd rfl (no hu).2
+    · exact absurd rfl (no hu).2
+  exact Or.inr ⟨d,a,b,hd,ham,hbm,hap,hbp,he,rfl⟩
+theorem norm_ne_one (a : Sig) : nrm true a ≠ one := by
+  intro h
+  have := nrm_bit a
+  rw [h,bit_one] at this
+  exact Bool.noConfusion this
+theorem prime_rep {u w a b} (d : Bool) (ha : Repr u w a) (hb : Repr u w b) :
+    Repr u w (prime d a b) ∨ witness u w (nrm u (prime d a b)) := by
+  cases u
+  · have e : prime d a b = bin (if d then 1 else 0) a b := by cases d <;> rfl
+    have h := bin_rep (u:=false) (if d then 1 else 0) (Or.inl (by split <;> omega)) ha hb (by simp)
+    unfold Repr
+    simp only [nrm_false] at h ⊢
+    rwa [e]
+  · obtain ⟨e,he,eq⟩ := nrm_prime d a b
+    unfold Repr
+    rw [eq]
+    exact bin_rep e (Or.inr ⟨rfl,he⟩) ha hb (fun _ => ⟨norm_ne_one a,norm_ne_one b⟩)
+theorem repr_const {u w} {v : Sig} (h : v=zero ∨ v=one) : Repr u w v := by
+  refine Or.inr fun hp => ?_
+  have := proper_nrm hp
+  rcases h with rfl | rfl
+  · exact this.1 rfl
+  · exact this.2 rfl
+private lemma get_rep {u} (w : List Sig) (i : Nat) : Repr u (w.map (nrm u)) (w.getD i zero) := by
+  simp only [List.getD_eq_getElem?_getD]
+  cases h : w[i]? with
+  | none => exact repr_const (Or.inl rfl)
+  | some a => exact Or.inl (List.mem_map_of_mem (List.mem_of_getElem? h))
+theorem repr_neg {w a} (h : Repr true w a) : Repr true w (neg a) := by
+  unfold Repr
+  rwa [nrm_neg]
+def isNot (g : Gate) : Bool := match g.op with
+  | .not => true
+  | _ => false
+private lemma gate_rep (u : Bool) (w : List Sig) (g : Gate)
+    (h : g.op ∈ ({GateOp.and,GateOp.or,GateOp.not} : Set GateOp) ∧ g.inputs.length≤2)
+    (mono : u=false → isNot g=false) :
+    Repr u (w.map (nrm u)) (gv w g) ∨ (isNot g=false ∧ witness u (w.map (nrm u)) (nrm u (gv w g))) := by
+  obtain ⟨o,l⟩ := g
+  simp only [Set.mem_insert_iff,Set.mem_singleton_iff] at h
+  obtain ⟨ho,hl⟩ := h
+  have prim (d : Bool) : Repr u (w.map (nrm u)) ((l.map (fun i => w.getD i zero)).foldr (prime d) (if d then zero else one)) ∨
+      witness u (w.map (nrm u)) (nrm u ((l.map (fun i => w.getD i zero)).foldr (prime d) (if d then zero else one))) := by
+    have unit (v : Sig) : prime d v (if d then zero else one) = v := by
+      apply bit_ext
+      intro i
+      cases d <;> simp [bit_prime,bit_zero,bit_one]
+    cases l with
+    | nil => exact Or.inl (repr_const (by cases d <;> simp))
+    | cons i l =>
+      cases l with
+      | nil =>
+        simp only [List.map_cons,List.map_nil,List.foldr_cons,List.foldr_nil,unit]
+        exact Or.inl (get_rep w i)
+      | cons j l =>
+        cases l with
+        | cons a l => simp at hl
+        | nil =>
+          simp only [List.map_cons,List.map_nil,List.foldr_cons,List.foldr_nil,unit]
+          exact prime_rep d (get_rep w i) (get_rep w j)
+  rcases ho with rfl | rfl | rfl
+  · exact (prim false).imp id (fun h => ⟨rfl,h⟩)
+  · exact (prim true).imp id (fun h => ⟨rfl,h⟩)
+  · cases u
+    · exact absurd (mono rfl) (by simp [isNot])
+    left
+    cases l with
+    | nil => exact repr_const (Or.inr (by simp [gv,neg_laws]))
+    | cons i l => exact repr_neg (get_rep w i)
+private lemma pull_gate {u target} {w : List Sig} {z : Sig} {k S c} (h : Live u target k S)
+    (hz : represented w z ∨ (c=1 ∧ witness u w z)) (sub : ∀ a ∈ S, a ∈ w++[z]) :
+    ∃ k' S', k' ≤ k+c ∧ Live u target k' S' ∧ ∀ a ∈ S', a ∈ w := by
+  by_cases hm : z ∈ S
+  · by_cases hw : z ∈ w
+    · refine ⟨k,S,by omega,h,?_⟩
+      intro a ha
+      have hu : a ∈ w ∨ a = z := by simpa using sub a ha
+      rcases hu with hu | rfl
+      · exact hu
+      · exact hw
+    · have hp := live_proper h z hm
+      rcases hz with hr | ⟨rfl,d,a,b,hd,ha,hb,pa,pb,hab,eq⟩
+      · exact False.elim ((hr.resolve_left hw) hp)
+      · subst z
+        let U := S.erase (bin d a b)
+        have ht : Live u target k (insert (bin d a b) U) := by simpa [U,Finset.insert_erase hm] using h
+        have hu : ∀ v ∈ U, v ∈ w := by
+          intro v hv
+          obtain ⟨hne,hm⟩ := Finset.mem_erase.mp hv
+          simpa [hne] using sub v hm
+        have hf : bin d a b ∉ insert a (insert b U) := by
+          intro hh
+          rcases Finset.mem_insert.mp hh with eq | u
+          · exact hw (eq.symm ▸ ha)
+          rcases Finset.mem_insert.mp u with eq | u
+          · exact hw (eq.symm ▸ hb)
+          · exact hw (hu _ u)
+        exact ⟨_,_,Nat.le_refl _,Live.binary hd pa pb hab hf ht,by simpa using And.intro ha (And.intro hb hu)⟩
+  · refine ⟨k,S,by omega,h,?_⟩
+    intro a ha
+    have hn : a ≠ z := fun hh => hm (hh ▸ ha)
+    simpa [hn] using sub a ha
+private lemma extract {u target} (gs : List Gate) (w : List Sig)
+    (legal : ∀ g ∈ gs, g.op ∈ ({GateOp.and,GateOp.or,GateOp.not} : Set GateOp) ∧ g.inputs.length≤2)
+    (mono : u=false → ∀ g ∈ gs, isNot g=false)
+    (hp : proper target) (hout : target ∈ (execute gs w).map (nrm u)) :
+    ∃ k S, k ≤ gs.countP (fun g => !isNot g) ∧ Live u target k S ∧ ∀ a ∈ S, a ∈ w.map (nrm u) := by
+  induction gs generalizing w with
+  | nil => exact ⟨0,{target},by simp,Live.stop hp,by simpa [execute] using hout⟩
+  | cons g gs ih =>
+    obtain ⟨k,S,hk,ht,hs⟩ := ih (w++[gv w g]) (fun a ha => legal a (by simp [ha]))
+      (fun hu a ha => mono hu a (by simp [ha])) hout
+    have rep := gate_rep u w g (legal g (by simp)) (fun hu => mono hu g (by simp))
+    rw [List.map_append] at hs
+    have rep' : represented (w.map (nrm u)) (nrm u (gv w g)) ∨
+        ((if isNot g then 0 else 1)=1 ∧ witness u (w.map (nrm u)) (nrm u (gv w g))) :=
+      rep.imp id (fun h => ⟨by simp [h.1],h.2⟩)
+    obtain ⟨l,T,hl,hu,hT⟩ := pull_gate ht rep' hs
+    refine ⟨l,T,?_,hu,hT⟩
+    rw [List.countP_cons]
+    cases hn : isNot g <;> simp [hn] at hl ⊢ <;> omega
+private lemma b_read (i) (w : List Sig) (j : Nat) :
+    (w.map (bit i)).getD j false = bit i (w.getD j zero) := by
+  simp only [List.getD_eq_getElem?_getD,List.getElem?_map]
+  cases w[j]? with
+  | none => exact (bit_zero _).symm
+  | some a => rfl
+private lemma run_bit (i) (g : Gate) (w : List Sig)
+    (hg : g.op ∈ ({GateOp.and,GateOp.or,GateOp.not} : Set GateOp)) :
+    bit i (gv w g) = g.op.eval (g.inputs.map fun j => (w.map (bit i)).getD j false) := by
+  obtain ⟨o,l⟩ := g
+  simp only [Set.mem_insert_iff,Set.mem_singleton_iff] at hg
+  simp only [b_read]
+  rcases hg with rfl | rfl | rfl
+  · induction l with
+    | nil => exact bit_one _
+    | cons a l ih =>
+      change bit i (prime false _ _) = (_ && _)
+      rw [bit_prime]; exact congrArg (fun x => bit i (w.getD a zero) && x) ih
+  · induction l with
+    | nil => exact bit_zero _
+    | cons a l ih =>
+      change bit i (prime true _ _) = (_ || _)
+      rw [bit_prime]; exact congrArg (fun x => bit i (w.getD a zero) || x) ih
+  · cases l with
+    | nil =>
+      change bit i (neg zero) = !false
+      rw [bit_neg,bit_zero]
+    | cons a l => exact bit_neg _ _
+private lemma execute_bits (gs : List Gate) (i) (w : List Sig)
+    (hg : ∀ g ∈ gs, g.op ∈ ({GateOp.and,GateOp.or,GateOp.not} : Set GateOp)) :
+    (execute gs w).map (bit i) =
+    gs.foldl (fun (l : List Bool) g => l++[g.op.eval (g.inputs.map fun j => l.getD j false)]) (w.map (bit i)) := by
+  induction gs generalizing w with
+  | nil => rfl
+  | cons g gs ih =>
+    change (execute gs (w++[gv w g])).map _ = _
+    rw [ih _ (fun a ha => hg a (by simp [ha]))]
+    simp only [List.foldl_cons,List.map_append,List.map_singleton,run_bit i g w (hg g (by simp))]
+abbrev Wire (R : Type) := R → Bool
+def inv {R} (a : Wire R) : Wire R := fun r => !(a r)
+def combine {R} (isOr : Bool) (a b : Wire R) : Wire R :=
+  if isOr then fun r => a r || b r else fun r => a r && b r
+def comb {R} (d : Nat) (a b : Wire R) : Wire R :=
+  if d=0 then combine false a b else if d=1 then combine true a b else
+    if d=2 then combine false a (inv b) else combine false (inv a) b
+def Constant {R} (a : Wire R) : Prop := ∃ b : Bool, a = fun _ => b
+noncomputable def cost {R} (a : Wire R) : Nat := by
+  classical exact if Constant a then 1 else 0
+noncomputable def mass {R} (xs : List (Wire R)) : Nat := (xs.map cost).sum
+def Available {R} (u : Bool) (pool : List (Wire R)) (v : Wire R) : Prop :=
+  v ∈ pool ∨ Constant v ∨ (u=true ∧ inv v ∈ pool)
+def supply {R} (u : Bool) (pool xs : List (Wire R)) := ∀ a ∈ xs, Available u pool a
+def Reach {R} (u : Bool) (roots : List (Wire R)) : Nat → List (Wire R) → Prop
+  | 0,b => b=roots
+  | p+1,c => ∃ (op : Bool) (bank : List (Wire R)) (a b : Wire R), Reach u roots p bank ∧ Available u bank a ∧
+      Available u bank b ∧ c=combine op a b :: bank
+theorem Reach.start {R u} {roots : List (Wire R)} : Reach u roots 0 roots := rfl
+theorem Reach.two {R u} {roots : List (Wire R)} {p bank a b} (op : Bool) (h : Reach u roots p bank)
+    (ha : Available u bank a) (hb : Available u bank b) : Reach u roots (p+1) (combine op a b :: bank) :=
+  ⟨op,bank,a,b,h,ha,hb,rfl⟩
+theorem Reach.ind {R u} {roots : List (Wire R)} {motive : ∀ p bank, Reach u roots p bank → Prop}
+    (start : motive 0 roots Reach.start)
+    (two : ∀ {p bank a b} (op : Bool) (h : Reach u roots p bank) (ha : Available u bank a)
+      (hb : Available u bank b), motive p bank h →
+      motive (p+1) (combine op a b :: bank) (Reach.two op h ha hb))
+    {p bank} (h : Reach u roots p bank) : motive p bank h := by
+  induction p generalizing bank with
+  | zero =>
+    obtain rfl := h
+    exact start
+  | succ p ih =>
+    obtain ⟨op,bank,a,b,h,ha,hb,rfl⟩ := h
+    exact two op h ha hb (ih h)
+def kept {α : Type} (save : Bool) (x : α) (xs : List α) := if save then x::xs else xs
+def Run {R} (u : Bool) (goal : Wire R) : Nat → List (Wire R) → Prop
+  | 0,zs => List.Perm [goal] zs
+  | s+1,zs => ∃ (op : Nat) (ka kb : Bool) (a b : Wire R) (rest : List (Wire R)), allowed u op ∧ (a::b::rest).Perm zs ∧
+      Run u goal s (comb op a b :: kept ka a (kept kb b rest))
+theorem Run.stop {R u} {goal : Wire R} : Run u goal 0 [goal] := List.Perm.refl _
+theorem Run.perm {R u} {goal : Wire R} {s : Nat} {xs zs : List (Wire R)} (p : xs.Perm zs)
+    (h : Run u goal s xs) : Run u goal s zs := by
+  cases s with
+  | zero => exact List.Perm.trans h p
+  | succ s =>
+    obtain ⟨op,ka,kb,a,b,rest,hd,q,h⟩ := h
+    exact ⟨op,ka,kb,a,b,rest,hd,q.trans p,h⟩
+theorem Run.two {R u} {goal : Wire R} {s : Nat} {a b : Wire R} {rest : List (Wire R)} (op : Nat) (hd : allowed u op) (ka kb : Bool)
+    (h : Run u goal s (comb op a b :: kept ka a (kept kb b rest))) : Run u goal (s+1) (a::b::rest) :=
+  ⟨op,ka,kb,a,b,rest,hd,List.Perm.refl _,h⟩
+theorem Run.ind {R u} {goal : Wire R} {motive : ∀ s ws, Run u goal s ws → Prop}
+    (stop : motive 0 [goal] Run.stop)
+    (perm : ∀ {s xs zs} (p : List.Perm xs zs) (h : Run u goal s xs), motive s xs h → motive s zs (Run.perm p h))
+    (two : ∀ {s a b rest} (op : Nat) (hd : allowed u op) (ka kb : Bool) (h : Run u goal s (comb op a b :: kept ka a (kept kb b rest))),
+      motive s _ h → motive (s+1) (a::b::rest) (Run.two op hd ka kb h))
+    {s ws} (h : Run u goal s ws) : motive s ws h := by
+  induction s generalizing ws with
+  | zero => exact perm h Run.stop stop
+  | succ s ih =>
+    obtain ⟨op,ka,kb,a,b,rest,hd,p,h⟩ := h
+    exact perm p (Run.two op hd ka kb h) (two op hd ka kb h (ih h))
+theorem mass_cons {R} (a : Wire R) (xs) : mass (a::xs)=cost a + mass xs := by
+  simp [mass]
+theorem mass_kept {R} (a : Wire R) (xs) (k : Bool) : mass xs ≤ mass (kept k a xs) := by
+  cases k <;> simp [kept,mass_cons]
+theorem inv_constant {R} {a : Wire R} (h : Constant a) : Constant (inv a) := by
+  obtain ⟨v,rfl⟩ := h
+  exact ⟨!v,rfl⟩
+theorem inv_inv' {R} (a : Wire R) : inv (inv a)=a := by
+  funext r
+  simp [inv]
+theorem cost_inv {R} (a : Wire R) : cost (inv a)=cost a := by
+  have : Constant (inv a) ↔ Constant a := ⟨fun h => inv_inv' a ▸ inv_constant h,inv_constant⟩
+  by_cases h : Constant a
+  · simp only [cost,if_pos h,if_pos (this.mpr h)]
+  · simp only [cost,if_neg h,if_neg (fun x => h (this.mp x))]
+theorem avail_inv {R u} {bank : List (Wire R)} {a} (hu : u=true) (h : Available u bank a) : Available u bank (inv a) := by
+  rcases h with h | h | ⟨_,h⟩
+  · exact Or.inr (Or.inr ⟨hu,(inv_inv' a).symm ▸ h⟩)
+  · exact Or.inr (Or.inl (inv_constant h))
+  · exact Or.inl h
+theorem both_constant {R} {a b : Wire R} (op) (h : Constant a) (g : Constant b) :
+    Constant (combine op a b) := by
+  obtain ⟨v,rfl⟩ := h
+  obtain ⟨w,rfl⟩ := g
+  cases op <;> exact ⟨_,rfl⟩
+theorem from_constant {R u} (op) {a b : Wire R} {bank}
+    (h : Constant a ∨ Constant b) (ha : Available u bank a) (hb : Available u bank b) :
+    Available u bank (combine op a b) := by
+  rcases h with ⟨v,rfl⟩ | ⟨v,rfl⟩
+  · cases op <;> cases v
+    · exact Or.inr (Or.inl ⟨false, by funext x; simp [combine]⟩)
+    · simpa [combine] using hb
+    · simpa [combine] using hb
+    · exact Or.inr (Or.inl ⟨true, by funext x; simp [combine]⟩)
+  · cases op <;> cases v
+    · exact Or.inr (Or.inl ⟨false, by funext x; simp [combine]⟩)
+    · simpa [combine] using ha
+    · simpa [combine] using ha
+    · exact Or.inr (Or.inl ⟨true, by funext x; simp [combine]⟩)
+theorem available_cons {R u} {bank v} (w : Wire R) (h : Available u bank v) :
+    Available u (w::bank) v :=
+  h.imp (List.mem_cons_of_mem _) (Or.imp id (And.imp id (List.mem_cons_of_mem _)))
+theorem extend_two {R u} (roots : List (Wire R)) {p bank a b} (op) (hp : Reach u roots p bank)
+    (ha : Available u bank a) (hb : Available u bank b) :
+    ∃ q next, Reach u roots q next ∧ Available u next (combine op a b) ∧
+        (∀ v, Available u bank v → Available u next v) ∧
+        q+cost a+cost b ≤ p+1+cost (combine op a b) := by
+  classical
+  by_cases c : Constant a ∨ Constant b
+  · refine ⟨p,bank,hp,from_constant op c ha hb,fun _ h => h,?_⟩
+    by_cases ca : Constant a <;> by_cases cb : Constant b
+    · simp [cost,ca,cb,both_constant op ca cb]
+    · simp [cost,ca,cb]
+    · simp [cost,ca,cb]
+    · exact False.elim (c.elim ca cb)
+  · have ca : ¬Constant a := fun h => c (Or.inl h)
+    have cb : ¬Constant b := fun h => c (Or.inr h)
+    exact ⟨p+1,_,Reach.two op hp ha hb,Or.inl (by simp),fun _ h => available_cons _ h,
+      by simp [cost,ca,cb]⟩
+theorem comb_prime {R u} {bank : List (Wire R)} {d a b} (hd : allowed u d) (ha : Available u bank a) (hb : Available u bank b) :
+    ∃ op x y, comb d a b=combine op x y ∧ Available u bank x ∧ Available u bank y ∧ cost x=cost a ∧ cost y=cost b := by
+  rcases allowed_four hd with rfl | rfl | ⟨hu,rfl⟩ | ⟨hu,rfl⟩
+  · exact ⟨false,a,b,rfl,ha,hb,rfl,rfl⟩
+  · exact ⟨true,a,b,rfl,ha,hb,rfl,rfl⟩
+  · exact ⟨false,a,inv b,rfl,ha,avail_inv hu hb,rfl,cost_inv b⟩
+  · exact ⟨false,inv a,b,rfl,avail_inv hu ha,hb,cost_inv a,rfl⟩
+theorem extend_comb {R u} (roots : List (Wire R)) {p bank a b} (d) (hd : allowed u d) (hp : Reach u roots p bank)
+    (ha : Available u bank a) (hb : Available u bank b) :
+    ∃ q next, Reach u roots q next ∧ Available u next (comb d a b) ∧
+        (∀ v, Available u bank v → Available u next v) ∧
+        q+cost a+cost b ≤ p+1+cost (comb d a b) := by
+  obtain ⟨op,x,y,e,hx,hy,cx,cy⟩ := comb_prime hd ha hb
+  rw [e,←cx,←cy]
+  exact extend_two roots op hp hx hy
+theorem mem_kept {α : Type} {k : Bool} {x a : α} {xs} (h : x ∈ kept k a xs) :
+    x=a ∨ x∈xs := by cases k <;> simp_all [kept]
+theorem contraction {R u} {goal : Wire R} (nc : ¬Constant goal) {s ws}
+    (h : Run u goal s ws) (roots : List (Wire R)) {p bank}
+    (hp : Reach u roots p bank) (hs : supply u bank ws) :
+    ∃ q next, Reach u roots q next ∧ Available u next goal ∧ q+mass ws ≤ p+s := by
+  classical
+  induction h using Run.ind generalizing p bank with
+  | stop =>
+    exact ⟨p,bank,hp,hs _ (by simp),by simp [mass,cost,nc]⟩
+  | perm eq _ ih =>
+    have hsub : supply u bank _ := fun v hv => hs v (eq.mem_iff.mp hv)
+    obtain ⟨q,W,hW,hv,hl⟩ := ih hp hsub
+    exact ⟨q,W,hW,hv,by simpa only [mass,←(eq.map cost).sum_eq] using hl⟩
+  | @two s a b rest op hd ka kb _ ih =>
+    obtain ⟨r,T,hT,hz,inc,le⟩ := extend_comb roots op hd hp (hs a (by simp)) (hs b (by simp))
+    have ht : supply u T (comb op a b :: kept ka a (kept kb b rest)) := by
+      intro v h
+      rcases List.mem_cons.mp h with rfl | hh
+      · exact hz
+      · apply inc v
+        apply hs
+        rcases mem_kept hh with rfl | hh
+        · simp
+        · exact List.mem_cons_of_mem _ (List.mem_cons.mpr (mem_kept hh))
+    obtain ⟨q,W,hW,hv,hl⟩ := ih hT ht
+    have hlen := mass_kept a (kept kb b rest) ka
+    have hlen' := mass_kept b rest kb
+    rw [mass_cons] at hl
+    refine ⟨q,W,hW,hv,?_⟩
+    rw [mass_cons,mass_cons]
+    omega
+def restrictRows {R S : Type} (rows : S → R) (a : Wire R) : Wire S :=
+  fun r => a (rows r)
+theorem restrict_kept {R S : Type} (rows : S → R) (k : Bool) (a : Wire R) (ws) :
+    (kept k a ws).map (restrictRows rows) =
+    kept k (restrictRows rows a) (ws.map (restrictRows rows)) := by
+  cases k <;> simp [kept]
+theorem restrict_comb {R S : Type} (rows : S → R) (d) (a b : Wire R) :
+    restrictRows rows (comb d a b) = comb d (restrictRows rows a) (restrictRows rows b) := by
+  unfold comb
+  split_ifs <;> rfl
+theorem restrict_run {R S : Type} {u} (rows : S → R) {goal s ws} (h : Run u goal s ws) :
+    Run u (restrictRows rows goal) s (ws.map (restrictRows rows)) := by
+  induction h using Run.ind with
+  | stop => exact Run.stop
+  | perm p _ ih => exact Run.perm (p.map _) ih
+  | two op hd ka kb _ ih =>
+    simp only [List.map_cons,restrict_kept,restrict_comb] at ih ⊢
+    exact Run.two op hd ka kb ih
+theorem projected_bound {R S : Type} {u} (rows : S → R) {goal s ws} (h : Run u goal s ws)
+    (nc : ¬Constant (restrictRows rows goal)) {roots : List (Wire S)} {p bank L}
+    (hp : Reach u roots p bank) (hs : supply u bank (ws.map (restrictRows rows)))
+    (hl : ∀ q bs, Reach u roots q bs → Available u bs (restrictRows rows goal) → L ≤ q) :
+    L + mass (ws.map (restrictRows rows)) ≤ p+s := by
+  obtain ⟨q,bs,hq,ht,hle⟩ := contraction nc (restrict_run rows h) roots hp hs
+  have hqle := hl q bs hq ht
+  omega
+abbrev Row := Fin 512
+def observe (a : Sig) : Wire Row := fun r => bit r a
+def table (f : Wire Row) : Sig :=
+  (BitVec.ofBoolListLE (List.ofFn f)).cast (List.length_ofFn)
+theorem bit_table (f : Wire Row) (r : Row) : bit r (table f) = f r := by
+  simp only [bit,table,BitVec.getLsbD_cast,BitVec.getLsbD_ofBoolListLE,List.getD_eq_getElem?_getD,List.getElem?_ofFn]; simp [r.isLt]
+theorem table_observe (v : Sig) : table (observe v) = v := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro j hj
+  exact bit_table (observe v) ⟨j,hj⟩
+theorem observe_table (f : Wire Row) : observe (table f) = f := by
+  funext r
+  exact bit_table f r
+theorem obs_neg (a : Sig) : observe (neg a) = inv (observe a) := by
+  funext r
+  exact bit_neg _ _
+theorem obs_bin (d : Nat) (a b : Sig) :
+    observe (bin d a b) = comb d (observe a) (observe b) := by
+  funext r
+  simp only [observe,bit_bin,comb]
+  split_ifs <;> rfl
+theorem map_kept {α β : Type} (f : α → β) (d : Bool) (a : α) (l : List α) :
+    (kept d a l).map f = kept d (f a) (l.map f) := by cases d <;> rfl
+theorem kept_nd {α : Type} (k : Bool) (a : α) (l : List α)
+    (hn : l.Nodup) (ha : a ∉ l) : (kept k a l).Nodup := by cases k <;> simp [kept,hn,ha]
+theorem kept_fin (k : Bool) (a : Sig) (l : List Sig) :
+    (kept k a l).toFinset = if k then insert a l.toFinset else l.toFinset := by
+  cases k <;> simp [kept]
+theorem list_run {u} {T : Sig} {k S} (h : Live u T k S) (v : List Sig)
+    (hv : v.Nodup) (eqv : v.toFinset = S) : Run u (observe T) k (v.map observe) := by
+  classical
+  induction h using Live.ind generalizing v with
+  | stop hp =>
+    have eq : [T].Perm v := by
+      apply List.perm_of_nodup_nodup_toFinset_eq (by simp) hv
+      simpa [eqv]
+    exact Run.perm (eq.map _) Run.stop
+  | @binary k U a b d hd ha hb hab fresh _ ih =>
+    let rest := ((U.erase a).erase b).toList
+    let ka := decide (a ∈ U)
+    let kb := decide (b ∈ U)
+    let mid := kept kb b rest
+    let tail := kept ka a mid
+    have er : rest.toFinset = (U.erase a).erase b := by simp [rest]
+    have ar : a ∉ rest := by simp [rest]
+    have br : b ∉ rest := by simp [rest]
+    have hr : rest.Nodup := Finset.nodup_toList _
+    have bm := kept_nd kb b rest hr br
+    have am : a ∉ mid := by cases h : kb <;> simp [mid,kept,h,hab,ar]
+    have nd := kept_nd ka a mid bm am
+    have ht : tail.toFinset = U := by
+      change (kept ka a (kept kb b rest)).toFinset = U
+      rw [kept_fin,kept_fin,er]
+      ext j
+      by_cases aa : a ∈ U <;> by_cases bb : b ∈ U <;> by_cases aj : j=a <;>
+        by_cases bj : j=b <;> simp_all [ka,kb]
+    have hf : bin d a b ∉ tail := by
+      intro hz
+      exact fresh (Finset.mem_insert_of_mem (Finset.mem_insert_of_mem (ht ▸ List.mem_toFinset.mpr hz)))
+    have progress := ih (bin d a b::tail) (List.nodup_cons.mpr ⟨hf,nd⟩) (by simp [ht])
+    change Run _ _ _ ((bin d a b::kept ka a (kept kb b rest)).map observe) at progress
+    rw [List.map_cons,map_kept,map_kept,obs_bin] at progress
+    have perm : (a::b::rest).Perm v := by
+      apply List.perm_of_nodup_nodup_toFinset_eq (by simp [hab,ar,br,hr]) hv
+      ext j
+      by_cases ja : j=a <;> by_cases jb : j=b <;> simp_all [er]
+    exact Run.perm (perm.map _) (Run.two d hd ka kb progress)
+theorem table_inv (f : Wire Row) : table (inv f) = neg (table f) := by
+  rw [←table_observe (neg (table f)),obs_neg,observe_table]
+theorem table_prime (d : Bool) (f g : Wire Row) :
+    table (combine d f g) = prime d (table f) (table g) := by
+  apply bit_ext
+  intro r
+  rw [bit_table,bit_prime,bit_table,bit_table]
+  cases d <;> rfl
+theorem available_rep {u} {bank : List (Wire Row)} {a} (h : Available u bank a) :
+    Repr u ((bank.map table).map (nrm u)) (table a) := by
+  rcases h with hm | ⟨b,rfl⟩ | ⟨rfl,hm⟩
+  · exact Or.inl (List.mem_map_of_mem (List.mem_map_of_mem hm))
+  · apply repr_const
+    cases b
+    · exact Or.inl (bit_ext fun i => (bit_table _ i).trans (bit_zero i).symm)
+    · exact Or.inr (bit_ext fun i => (bit_table _ i).trans (bit_one i).symm)
+  · have := table_inv a
+    refine Or.inl ?_
+    rw [←nrm_neg,←this]
+    exact List.mem_map_of_mem (List.mem_map_of_mem hm)
+theorem reach_live_sub {u} {roots : List (Wire Row)} {p bank}
+    (h : Reach u roots p bank) {T k S} (run : Live u T k S)
+    (sub : ∀ a ∈ S, a ∈ (bank.map table).map (nrm u)) :
+    ∃ l V, l ≤ p+k ∧ Live u T l V ∧ ∀ a ∈ V, a ∈ (roots.map table).map (nrm u) := by
+  induction h using Reach.ind generalizing k S with
+  | start => exact ⟨k,S,by omega,run,sub⟩
+  | @two p bank a b d h ha hb ih =>
+    rw [List.map_cons,List.map_cons,table_prime] at sub
+    have rep := prime_rep d (available_rep ha) (available_rep hb)
+    obtain ⟨k',S',hk,run',sub'⟩ := pull_gate (c:=1) run (rep.imp id (fun h => ⟨rfl,h⟩))
+      (fun a hm => by simpa [or_comm] using sub a hm)
+    obtain ⟨l,V,hl,hr,hs⟩ := ih run' sub'
+    exact ⟨l,V,by omega,hr,hs⟩
+def plainWord (a : Sig) : Bool := !(bit 0 a)
+theorem nrm_map {u} {w : List Sig} (h : w.all plainWord=true) : w.map (nrm u)=w := by
+  have e : w.map (nrm u) = w.map id := by
+    apply List.map_congr_left
+    intro a ha
+    exact nrm_id (by simpa [plainWord] using List.all_eq_true.mp h a ha)
+  rw [e,List.map_id]
+theorem reach_live {u} {roots : List Sig} {p bank T} (hp : proper T) (nT : plainWord T=true) (nR : roots.all plainWord=true)
+    (h : Reach u (roots.map observe) p bank) (hit : Available u bank (observe T)) :
+    ∃ k S, k ≤ p ∧ Live u T k S ∧ ∀ a ∈ S, a ∈ roots := by
+  have hm := available_rep hit
+  rw [table_observe] at hm
+  unfold Repr at hm
+  rw [nrm_id (by simpa [plainWord] using nT)] at hm
+  have mem := hm.resolve_right (fun hn => hn hp)
+  obtain ⟨l,V,hl,hr,hs⟩ := reach_live_sub h (Live.stop hp) (by simpa using mem)
+  refine ⟨l,V,by omega,hr,?_⟩
+  have e : (roots.map observe).map table = roots := by simp [List.map_map,Function.comp_def,table_observe]
+  rw [e,nrm_map nR] at hs
+  exact hs
+theorem live_row_difference {u T k S} (h : Live u T k S) {r s : Row}
+    (diff : bit r T ≠ bit s T) : ∃ a ∈ S, bit r a ≠ bit s a := by
+  induction h using Live.ind with
+  | stop hp => exact ⟨_,by simp,diff⟩
+  | @binary k U a b d hd ha hb hab hf _ ih =>
+    obtain ⟨v,hv,hd⟩ := ih
+    rcases Finset.mem_insert.mp hv with rfl | hu
+    · by_cases aeq : bit r a = bit s a
+      · refine ⟨b,by simp,?_⟩
+        intro beq
+        exact hd (by rw [bit_bin,bit_bin,aeq,beq])
+      · exact ⟨a,by simp,aeq⟩
+    · exact ⟨v,Finset.mem_insert_of_mem (Finset.mem_insert_of_mem hu),hd⟩
+theorem raw_required {u T k S} (h : Live u T k S) (roots : List Sig) (a : Sig)
+    (sub : ∀ v ∈ S, v ∈ roots) (r s : Row) (diff : bit r T ≠ bit s T)
+    (isolated : ∀ v ∈ roots, v ≠ a → bit r v = bit s v) : a ∈ S := by
+  obtain ⟨v,hv,hd⟩ := live_row_difference h diff
+  by_cases veq : v=a
+  · simpa [veq] using hv
+  · exact False.elim (hd (isolated v (sub v hv) veq))
+def inputs : List Sig := [(BitVec.ofNat 512 (0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)),(BitVec.ofNat 512 (0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc)),(BitVec.ofNat 512 (0xf0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0)),(BitVec.ofNat 512 (0xff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00)),(BitVec.ofNat 512 (0xffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000)),(BitVec.ofNat 512 (0xffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000ffffffff00000000)),(BitVec.ofNat 512 (0xffffffffffffffff0000000000000000ffffffffffffffff0000000000000000ffffffffffffffff0000000000000000ffffffffffffffff0000000000000000)),(BitVec.ofNat 512 (0xffffffffffffffffffffffffffffffff00000000000000000000000000000000ffffffffffffffffffffffffffffffff00000000000000000000000000000000)),(BitVec.ofNat 512 (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000000))]
+def graph : Sig := (BitVec.ofNat 512 (0xfffffffffffffffffffffffffffefffefffffffefffffffcfefefafaeeccaa00fffffffffffffffffffffffffffefffefffffffefffffffcfefefafaeeccaa00))
+def sample (r : Row) (j : Fin 9) := bit r (inputs.getD j.val zero)
+def edge (x : Fin 9 → Bool) : Bool :=
+  (x 0 && x 3) || (x 1 && x 4) || (x 0 && x 5) || (x 2 && x 5) || (x 1 && x 6) || (x 2 && x 6) || (x 3 && x 6) || (x 4 && x 6) || (x 0 && x 7) || (x 1 && x 7) || (x 2 && x 7) || (x 3 && x 7) || (x 5 && x 7) || (x 6 && x 7)
+theorem edge_table : ∀ r : Row, bit r graph = edge (sample r) := by decide +kernel
+theorem graph_proper : proper graph := by unfold proper; decide +kernel
+theorem input_list : List.ofFn (fun j : Fin 9 => inputs.getD j.val zero) = inputs := rfl
+theorem sampled (r : Row) : List.ofFn (sample r) = inputs.map (bit r) := by
+  rw [←input_list]
+  rw [List.map_ofFn]
+  rfl
+theorem table_eval (C : Circuit) (h : PEqualNP.MetaComplexity.FanInTwo C)
+    (i : Nat) (r : Row) : bit r ((execute C.gates inputs).getD i zero) =
+      (C.wires (List.ofFn (sample r))).getD i false := by
+  rw [←b_read,execute_bits _ _ _ (fun g hg => (h g hg).1),sampled]
+  rfl
+def rename (f : Row → Row) (a : Sig) := table fun r => bit (f r) a
+theorem bit_rename (f : Row → Row) (a : Sig) (r : Row) :
+    bit r (rename f a) = bit (f r) a := bit_table _ _
+theorem observe_rename (f : Row → Row) (a : Sig) :
+    observe (rename f a) = restrictRows f (observe a) := by funext r; exact bit_rename f a r
+theorem rename_bin (f : Row → Row) (d : Nat) (a b : Sig) :
+    rename f (bin d a b) = bin d (rename f a) (rename f b) := by
+  apply bit_ext
+  intro r
+  simp only [bit_rename,bit_bin]
+theorem rename_inj (f : Row → Row) (onto : Function.Surjective f) :
+    Function.Injective (rename f) := by
+  intro a b h
+  apply BitVec.eq_of_getLsbD_eq
+  intro j hj
+  obtain ⟨r,hr⟩ := onto ⟨j,hj⟩
+  have he := congrArg (bit r) h
+  change bit ⟨j,hj⟩ a = bit ⟨j,hj⟩ b
+  rw [bit_rename,bit_rename,hr] at he
+  exact he
+theorem rename_constants (f : Row → Row) : rename f zero = zero ∧ rename f one = one := by
+  constructor <;> apply BitVec.eq_of_getLsbD_eq <;> intro j hj
+  · exact (bit_rename f zero ⟨j,hj⟩).trans ((bit_zero _).trans (bit_zero ⟨j,hj⟩).symm)
+  · exact (bit_rename f one ⟨j,hj⟩).trans ((bit_one _).trans (bit_one ⟨j,hj⟩).symm)
+theorem live_rename {u T k S} (h : Live u T k S) (f : Row → Row) (onto : Function.Surjective f) :
+    Live u (rename f T) k (S.image (rename f)) := by
+  have inj := rename_inj f onto
+  obtain ⟨fz,fo⟩ := rename_constants f
+  have pp (v) (p : proper v) : proper (rename f v) :=
+    ⟨fun e => p.1 (inj (e.trans fz.symm)),fun e => p.2 (inj (e.trans fo.symm))⟩
+  induction h using Live.ind with
+  | stop hp => simpa using Live.stop (pp _ hp)
+  | @binary k U a b d hd ha hb hab hf _ ih =>
+    have fresh : rename f (bin d a b) ∉ (insert a (insert b U)).image (rename f) := by
+      intro hm
+      obtain ⟨v,hv,eq⟩ := Finset.mem_image.mp hm
+      exact hf (inj eq ▸ hv)
+    simp only [Finset.image_insert,rename_bin] at fresh ih ⊢
+    exact Live.binary hd (pp _ ha) (pp _ hb) (fun hh => hab (inj hh)) fresh ih
+theorem mono_row_difference {u T k S} (h : Live u T k S) (none : u=false) {r s : Row}
+    (pos : bit r T = true) (negRow : bit s T = false) :
+    ∃ a ∈ S, bit r a = true ∧ bit s a = false := by
+  induction h using Live.ind with
+  | stop hp => exact ⟨_,by simp,pos,negRow⟩
+  | @binary k U a b d hd ha hb hab hf _ ih =>
+    obtain ⟨v,hv,hp,hn⟩ := ih
+    rcases Finset.mem_insert.mp hv with rfl | hu
+    · rw [bit_bin] at hp hn
+      subst none
+      rcases allowed_four hd with rfl | rfl | ⟨h,_⟩ | ⟨h,_⟩
+      · cases p : bit r a <;> cases q : bit s a <;> cases u : bit r b <;> cases z : bit s b <;> simp_all
+      · cases p : bit r a <;> cases q : bit s a <;> cases u : bit r b <;> cases z : bit s b <;> simp_all
+      · exact Bool.noConfusion h
+      · exact Bool.noConfusion h
+    · exact ⟨v,Finset.mem_insert_of_mem (Finset.mem_insert_of_mem hu),hp,hn⟩
+def Lower (u : Bool) (roots : List Sig) (T : Sig) (L : Nat) : Prop :=
+  ∀ p bank, Reach u (roots.map observe) p bank → Available u bank (observe T) → L ≤ p
+theorem reach_up {R u} {roots : List (Wire R)} {p bank} (h : Reach false roots p bank) : Reach u roots p bank := by
+  have up {bank : List (Wire R)} {a} (h : Available false bank a) : Available u bank a :=
+    h.imp id (Or.imp id (fun h => Bool.noConfusion h.1))
+  induction h using Reach.ind with
+  | start => exact Reach.start
+  | two op h ha hb ih => exact Reach.two op ih (up ha) (up hb)
+theorem lower_down {u roots T L} (h : Lower true roots T L) : Lower u roots T L := by
+  cases u
+  · exact fun p bank hr ha => h p bank (reach_up hr) (ha.imp id (Or.imp id (fun h => Bool.noConfusion h.1)))
+  · exact h
+def Impossible (u : Bool) (T : Sig) (cap : Nat) (S : Finset Sig) : Prop :=
+  ∀ k, k ≤ cap → ¬Live u T k S
+def Essential (T : Sig) (roots : List Sig) (a : Sig) : Prop :=
+  ∃ r s : Row, bit r T ≠ bit s T ∧ ∀ v ∈ roots, v ≠ a → bit r v = bit s v
+theorem lower_impossible {u roots T L} (hp : proper T) (nT : plainWord T=true) (nR : roots.all plainWord=true)
+    (essential : ∀ a ∈ roots, Essential T roots a)
+    (noRun : Impossible u T L roots.toFinset) : Lower u roots T (L+1) := by
+  intro p bank h ha
+  obtain ⟨k,S,hk,run,hs⟩ := reach_live hp nT nR h ha
+  have he : roots.toFinset = S := by
+    ext a
+    rw [List.mem_toFinset]
+    refine ⟨fun hm => ?_,hs a⟩
+    obtain ⟨r,s,hd,iso⟩ := essential _ hm
+    exact raw_required run roots a hs r s hd iso
+  by_contra! small
+  exact noRun k (by omega) (he.symm ▸ run)
+theorem observe_proper {v : Sig} (hv : proper v) : ¬Constant (observe v) := by
+  rintro ⟨b,h⟩
+  have hr : Repr false [] v := by
+    apply repr_const
+    cases b
+    · exact Or.inl (bit_ext fun i => (congrFun h i).trans (bit_zero i).symm)
+    · exact Or.inr (bit_ext fun i => (congrFun h i).trans (bit_one i).symm)
+  have hr' : represented [] v := hr
+  exact (hr'.resolve_left (by simp)) hv
+theorem mass_append {R} (a b : List (Wire R)) : mass (a++b) = mass a + mass b := by
+  simp [mass]
+theorem mass_constants {R} (xs : List (Wire R)) (hc : ∀ x ∈ xs, Constant x) :
+    mass xs = xs.length := by
+  induction xs with
+  | nil => simp [mass]
+  | cons a xs ih =>
+    have ha := hc a (by simp)
+    simp only [mass_cons,List.length_cons,cost,if_pos ha,ih (fun x hx => hc x (by simp [hx]))]
+    omega
+theorem lower_slice {u} {roots other : List Sig} {T G : Sig} (pT : proper T) (nT : plainWord T=true) (nR : roots.all plainWord=true) (pG : proper G)
+    (r : Row → Row) (eq : rename r T = G)
+    (covered : ∀ a ∈ roots, Available u (other.map observe) (observe (rename r a)))
+    (singles : Finset Sig) (necessary : ∀ a ∈ singles, Essential T roots a)
+    (constant : ∀ a ∈ singles, Constant (observe (rename r a)))
+    (L : Nat) (prior : Lower u other G L) : Lower u roots T (L + singles.card) := by
+  classical
+  intro p bank hh ha
+  obtain ⟨k,S,hk,run,sub⟩ := reach_live pT nT nR hh ha
+  have subS : singles ⊆ S := by
+    intro a hs
+    obtain ⟨i,j,hd,hiso⟩ := necessary a hs
+    exact raw_required run roots a sub i j hd hiso
+  let front := singles.toList ++ (S \ singles).toList
+  have nd : front.Nodup := by
+    simp only [front,List.nodup_append]
+    refine ⟨Finset.nodup_toList _,Finset.nodup_toList _,?_⟩
+    intro a ha b hb he
+    subst b
+    exact (Finset.mem_sdiff.mp (Finset.mem_toList.mp hb)).2 (Finset.mem_toList.mp ha)
+  have fe : front.toFinset=S := by ext a; simp [front,Finset.union_sdiff_of_subset subS]
+  have run' := list_run run front nd fe
+  have gc : restrictRows r (observe T) = observe G := (observe_rename _ _).symm.trans (congrArg observe eq)
+  have supp : supply u (other.map observe) ((front.map observe).map (restrictRows r)) := by
+    intro v hv
+    obtain ⟨_,hm,rfl⟩ := List.mem_map.mp hv
+    obtain ⟨a,hmem,rfl⟩ := List.mem_map.mp hm
+    rw [←observe_rename]
+    exact covered a (sub _ (fe ▸ List.mem_toFinset.mpr hmem))
+  have bound := projected_bound r run' (gc ▸ observe_proper pG) Reach.start supp
+    (L:=L) (gc ▸ prior)
+  have massLo : singles.card ≤ mass ((front.map observe).map (restrictRows r)) := by
+    simp only [front,List.map_append,mass_append]
+    let xs := (singles.toList.map observe).map (restrictRows r)
+    have only : ∀ v ∈ xs, Constant v := by
+      intro v hv
+      obtain ⟨_,hm,rfl⟩ := List.mem_map.mp hv
+      obtain ⟨a,hmem,rfl⟩ := List.mem_map.mp hm
+      rw [←observe_rename]
+      exact constant _ (Finset.mem_toList.mp hmem)
+    have sz := mass_constants xs only
+    simp only [xs,List.length_map,Finset.length_toList] at sz
+    change singles.card ≤ mass xs + _
+    rw [sz]
+    omega
+  omega
+def childTwo (ws : List Sig) (a b : Sig) (d : Nat) (ka kb : Bool) : List Sig :=
+  bin d a b :: kept ka a (kept kb b ((ws.erase a).erase b))
+theorem erase_fin {l : List Sig} (h : l.Nodup) (a : Sig) : (l.erase a).toFinset = l.toFinset.erase a := by
+  ext x
+  simp [h.mem_erase_iff]
+theorem enum_step {u} {T : Sig} {cap : Nat} {ws : List Sig} (hn : ws.Nodup) (out : T ∉ ws)
+    (twoStep : ∀ a ∈ ws, ∀ b ∈ ws, ∀ d, allowed u d → ∀ ka kb, a ≠ b → bin d a b ∉ ws →
+      proper (bin d a b) → (childTwo ws a b d ka kb).length ≤ cap →
+      Impossible u T (cap-1) (childTwo ws a b d ka kb).toFinset) :
+    Impossible u T cap ws.toFinset := by
+  classical
+  intro k hk h
+  generalize he : ws.toFinset = S at h
+  induction h using Live.ind with
+  | stop hp =>
+    have mem : T ∈ ws.toFinset := he.symm ▸ Finset.mem_singleton_self _
+    exact out (List.mem_toFinset.mp mem)
+  | @binary k U a b d hd ha hb hab hf tail _ =>
+    have am : a ∈ ws := List.mem_toFinset.mp (he.symm ▸ Finset.mem_insert_self _ _)
+    have bm : b ∈ ws := List.mem_toFinset.mp (he.symm ▸ Finset.mem_insert_of_mem (Finset.mem_insert_self _ _))
+    have fresh : bin d a b ∉ ws := fun h => hf (he ▸ List.mem_toFinset.mpr h)
+    have hz := live_proper tail _ (Finset.mem_insert_self _ _)
+    let ka := decide (a ∈ U)
+    let kb := decide (b ∈ U)
+    let rest := (ws.erase a).erase b
+    have er : rest.toFinset = (ws.toFinset.erase a).erase b := by
+      rw [show rest=(ws.erase a).erase b by rfl,erase_fin (hn.erase _) b,
+        erase_fin hn a]
+    have ke : (kept ka a (kept kb b rest)).toFinset = U := by
+      rw [kept_fin,kept_fin,er,he]
+      ext j
+      by_cases aa : a ∈ U <;> by_cases bb : b ∈ U <;> by_cases ja : j=a <;>
+        by_cases jb : j=b <;> simp_all [ka,kb]
+    have rn : rest.Nodup := (hn.erase _).erase _
+    have ar : a ∉ rest := fun h => (hn.not_mem_erase) (List.mem_of_mem_erase h)
+    have br : b ∉ rest := (hn.erase a).not_mem_erase
+    have nk := kept_nd kb b rest rn br
+    have ax : a ∉ kept kb b rest := by cases kb <;> simp [kept,ar,hab]
+    have nd : (childTwo ws a b d ka kb).Nodup := by
+      refine List.nodup_cons.mpr ⟨?_,kept_nd ka a _ nk ax⟩
+      intro h
+      exact hf (Finset.mem_insert_of_mem (Finset.mem_insert_of_mem (ke ▸ List.mem_toFinset.mpr h)))
+    have eq : (childTwo ws a b d ka kb).toFinset = insert (bin d a b) U := by
+      change (bin d a b::kept ka a (kept kb b rest)).toFinset = _
+      simp [ke]
+    have sc := live_size tail
+    have len : (childTwo ws a b d ka kb).length ≤ cap := by
+      rw [←List.toFinset_card_of_nodup nd,eq]
+      omega
+    exact twoStep a am b bm d hd ka kb hab fresh hz len k (by omega) (eq.symm ▸ tail)
+def Sep (T : Sig) (width : Nat) (pos negRow : Fin width → Row)
+    (asig : Sig → BitVec width × BitVec width) : Prop :=
+  (∀ i, bit (pos i) T = true ∧ bit (negRow i) T = false) ∧
+  ∀ w i,(asig w).1.getLsbD i.val = bit (pos i) w ∧
+    (asig w).2.getLsbD i.val = bit (negRow i) w
+def column {n} (oriented : Bool) (s : BitVec n × BitVec n) : BitVec n :=
+  if oriented then s.1 &&& ~~~s.2 else s.1 ^^^ s.2
+def covered {n} (oriented : Bool) (sig : Sig → BitVec n × BitVec n) : List Sig → BitVec n
+  | [] => 0
+  | a::ws => column oriented (sig a) ||| covered oriented sig ws
+theorem covered_bit {n : Nat} {oriented : Bool} {sig : Sig → BitVec n × BitVec n} {ws : List Sig} {i : Fin n} :
+    (covered oriented sig ws).getLsbD i.val = true ↔
+    ∃ a ∈ ws,(column oriented (sig a)).getLsbD i.val = true := by
+  induction ws with
+  | nil => simp [covered]
+  | cons a ws ih =>
+    simp only [covered,BitVec.getLsbD_or,Bool.or_eq_true,ih,List.mem_cons,exists_eq_or_imp]
+theorem cover_sound {u T k S} (h : Live u T k S) {ws : List Sig} (he : ws.toFinset=S)
+    {width : Nat} {r s : Fin width → Row} {sig} (correct : Sep T width r s sig)
+    (oriented : Bool) (zeroNot : oriented=true → u=false) :
+    covered oriented sig ws = BitVec.allOnes width := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro j hj
+  let i : Fin width := ⟨j,hj⟩
+  have yes := (correct.1 i).1
+  have no := (correct.1 i).2
+  rw [BitVec.getLsbD_allOnes]; simp only [hj,decide_true]
+  apply (covered_bit (i:=i)).mpr
+  cases oriented with
+  | false =>
+    obtain ⟨a,ha,hd⟩ := live_row_difference h (show bit (r i) T ≠ bit (s i) T by simp [yes,no])
+    refine ⟨a,List.mem_toFinset.mp (he.symm ▸ ha),?_⟩
+    simp only [column,Bool.false_eq_true,ite_false,BitVec.getLsbD_xor,(correct.2 a i).1,(correct.2 a i).2]
+    cases hx : bit (r i) a <;> cases hy : bit (s i) a <;> simp_all
+  | true =>
+    obtain ⟨a,ha,hp,hn⟩ := mono_row_difference h (zeroNot rfl) yes no
+    refine ⟨a,List.mem_toFinset.mp (he.symm ▸ ha),?_⟩
+    simp only [column,ite_true,BitVec.getLsbD_and,BitVec.getLsbD_not,i.isLt,decide_true,
+      Bool.true_and,(correct.2 a i).1,(correct.2 a i).2,hp,hn,Bool.not_false,Bool.and_self]
+theorem cover_required {u T ws k} (h : Live u T k (List.toFinset ws)) {n : Nat} {r s : Fin n → Row} {sig}
+    (correct : Sep T n r s sig) :
+    covered (!u) sig ws = BitVec.allOnes n := by
+  apply cover_sound h rfl correct
+  simp
+def Slice (u : Bool) (raw : List Sig) (T d : Sig) (L : Nat) : Prop :=
+  ∃ (f : Row → Row) (roots : List Sig),(∀ r, bit (f r) d = true) ∧
+    (∀ a ∈ raw, Available u (roots.map observe) (restrictRows f (observe a))) ∧
+    ¬Constant (restrictRows f (observe T)) ∧
+    ∀ p bank, Reach u (roots.map observe) p bank → Available u bank (restrictRows f (observe T)) → L ≤ p
+def masked (d a : Sig) := a &&& d
+def availableB (u : Bool) (d : Sig) (pool : List Sig) (a : Sig) :=
+  let m := masked d a
+  m == zero || m == d || (pool.map (masked d)).any (fun v => v==m) ||
+    (u && (let c := masked d (neg a); (pool.map (masked d)).any (fun v => v==c)))
+theorem masked_eq {f : Row → Row} {d a b : Sig} (dom : ∀ r, bit (f r) d = true)
+    (eq : masked d a = masked d b) :
+    restrictRows f (observe a) = restrictRows f (observe b) := by
+  funext r
+  have h := congrArg (bit (f r)) eq
+  change bit (f r) a = bit (f r) b
+  simpa only [bit,masked,BitVec.getLsbD_and,show d.getLsbD (f r).val = true from dom r,
+    Bool.and_true] using h
+theorem masked_zero {f : Row → Row} {d a : Sig} (dom : ∀ r, bit (f r) d = true)
+    (eq : masked d a = zero) : restrictRows f (observe a) = fun _ => false := by
+  funext r
+  have he := congrArg (bit (f r)) eq
+  change bit (f r) a = false
+  rw [bit_zero] at he
+  simpa only [bit,masked,BitVec.getLsbD_and,show d.getLsbD (f r).val = true from dom r,
+    Bool.and_true] using he
+theorem masked_one {f : Row → Row} {d a : Sig} (dom : ∀ r, bit (f r) d = true)
+    (eq : masked d a = d) : restrictRows f (observe a) = fun _ => true := by
+  funext r
+  have he := congrArg (bit (f r)) eq
+  change bit (f r) a = true
+  rw [dom r] at he
+  simpa only [bit,masked,BitVec.getLsbD_and,show d.getLsbD (f r).val = true from dom r,
+    Bool.and_true] using he
+def poolSupply (u : Bool) (f : Row → Row) (bank : List (Wire Row)) (pool : List Sig) :=
+  ∀ a ∈ pool, Available u bank (restrictRows f (observe a))
+theorem availableB_sound {u} {f : Row → Row} {d a : Sig} {bank pool}
+    (dom : ∀ r, bit (f r) d = true) (supplyB : poolSupply u f bank pool)
+    (check : availableB u d pool a = true) : Available u bank (restrictRows f (observe a)) := by
+  simp only [availableB,List.any_map,Function.comp_def,Bool.or_eq_true,Bool.and_eq_true,beq_iff_eq,List.any_eq_true] at check
+  rcases check with ((hz | ho) | ⟨v,hv,he⟩) | ⟨hu,v,hv,he⟩
+  · exact Or.inr (Or.inl ⟨false,masked_zero dom hz⟩)
+  · exact Or.inr (Or.inl ⟨true,masked_one dom ho⟩)
+  · exact masked_eq dom he ▸ supplyB v hv
+  · have h := avail_inv hu (masked_eq dom he ▸ supplyB v hv)
+    rw [obs_neg] at h
+    have e : inv (restrictRows f (inv (observe a))) = restrictRows f (observe a) := by
+      funext r
+      simp [inv,restrictRows]
+    rwa [e] at h
+abbrev Choice := Nat × Sig × Sig
+def choiceVal (c : Choice) := bin c.1 c.2.1 c.2.2
+def allowedB (u : Bool) (d : Nat) := decide (d<2) || (u && decide (d<4))
+theorem allowedB_ok {u d} (h : allowedB u d=true) : allowed u d := by
+  simpa [allowedB,allowed] using h
+def choiceOK (u : Bool) (d : Sig) (pool : List Sig) (c : Choice) :=
+  allowedB u c.1 && (availableB u d pool c.2.1 && availableB u d pool c.2.2)
+theorem pay_choice {u} {f : Row → Row} {d : Sig} {roots bank pool q}
+    (dom : ∀ r, bit (f r) d = true) (hp : Reach u roots q bank) (hs : poolSupply u f bank pool)
+    (c : Choice) (valid : choiceOK u d pool c = true) :
+    ∃ next, Reach u roots (q+1) next ∧ poolSupply u f next (choiceVal c :: pool) := by
+  simp only [choiceOK,Bool.and_eq_true] at valid
+  obtain ⟨op,x,y,e,hx,hy,_,_⟩ := comb_prime (allowedB_ok valid.1) (availableB_sound dom hs valid.2.1)
+    (availableB_sound dom hs valid.2.2)
+  refine ⟨_,Reach.two op hp hx hy,?_⟩
+  intro a hm
+  rcases List.mem_cons.mp hm with rfl | hm
+  · rw [choiceVal,obs_bin,restrict_comb,e]
+    exact Or.inl (by simp)
+  · exact available_cons _ (hs _ hm)
+def makePool (u : Bool) (d : Sig) (pool : List Sig) : List Choice → Option (List Sig)
+  | [] => some pool
+  | c::cs => if choiceOK u d pool c then makePool u d (choiceVal c::pool) cs else none
+theorem makePool_sound {u} {d : Sig} {f : Row → Row} (dom : ∀ r, bit (f r) d = true)
+    {roots bank q pool} (hp : Reach u roots q bank) (hs : poolSupply u f bank pool)
+    (cs : List Choice) {result} (ok : makePool u d pool cs = some result) :
+    ∃ next, Reach u roots (q+cs.length) next ∧ poolSupply u f next result := by
+  induction cs generalizing bank q pool with
+  | nil => cases ok; exact ⟨_,hp,hs⟩
+  | cons c cs ih =>
+    simp only [makePool] at ok
+    split at ok
+    next h =>
+      obtain ⟨next,hr,sh⟩ := pay_choice dom hp hs c h
+      obtain ⟨out,hr',sh'⟩ := ih hr sh ok
+      exact ⟨out,by simpa [Nat.add_assoc,Nat.add_comm 1] using hr',sh'⟩
+    next => contradiction
+def isMaskedConstant (d a : Sig) := masked d a == zero || masked d a == d
+theorem count_constants {d : Sig} {f : Row → Row} (dom : ∀ r, bit (f r) d = true)
+    (ws : List Sig) : ws.countP (isMaskedConstant d) ≤ mass ((ws.map observe).map (restrictRows f)) := by
+  classical
+  induction ws with
+  | nil => simp [mass]
+  | cons a ws ih =>
+    simp only [List.countP_cons,List.map_cons,mass_cons]
+    cases h : isMaskedConstant d a
+    · simpa using (Nat.le_add_left _ _ |> ih.trans)
+    · have hc : Constant (restrictRows f (observe a)) := by
+        have hh : masked d a = zero ∨ masked d a = d := by simpa only [isMaskedConstant,Bool.or_eq_true,beq_iff_eq] using h
+        rcases hh with hz | ho
+        · exact ⟨false,masked_zero dom hz⟩
+        · exact ⟨true,masked_one dom ho⟩
+      simpa [cost,hc,Nat.add_comm] using Nat.succ_le_succ ih
+def poolCut (u : Bool) (d : Sig) (L k p : Nat) (pool ws : List Sig) :=
+  decide (k+p < L+ws.countP (isMaskedConstant d)) && ws.all (availableB u d pool)
+theorem poolCut_sound {u raw T d L} (slice : Slice u raw T d L) (cs : List Choice)
+    {pool ws cap} (built : makePool u d raw cs = some pool)
+    (nd : ws.Nodup) (cut : poolCut u d L cap cs.length pool ws = true) :
+    Impossible u T cap ws.toFinset := by
+  intro k hk h
+  obtain ⟨f,roots,dom,base,nc,lo⟩ := slice
+  obtain ⟨bank,hr,hs⟩ := makePool_sound dom (Reach.start (roots:=roots.map observe)) base cs built
+  simp only [poolCut,Bool.and_eq_true,decide_eq_true_eq] at cut
+  obtain ⟨ineq,all⟩ := cut
+  have coveredS : supply u bank ((ws.map observe).map (restrictRows f)) := by
+    intro v hv
+    obtain ⟨_,hm,rfl⟩ := List.mem_map.mp hv
+    obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hm
+    exact availableB_sound dom hs (List.all_eq_true.mp all a ha)
+  have b := projected_bound f (list_run h ws nd rfl) nc hr coveredS lo
+  have massLo := count_constants dom ws
+  have hu := ineq
+  simp only [Nat.zero_add] at b
+  omega
+abbrev Move := Sig × Sig × Row
+def shifted (d r : Row) : Row :=
+  if h : r.val < 512-d.val then ⟨d.val+r.val,by omega⟩ else ⟨r.val-(512-d.val),by omega⟩
+def backwards (d : Row) : Row := Fin.ofNat 512 (512-d.val)
+def rowMove (m : Move) (r : Row) : Row :=
+  if bit r m.1 then shifted m.2.2 r else if bit r m.2.1 then shifted (backwards m.2.2) r else r
+def mux (m a b : Sig) := (m &&& a) ||| (~~~m &&& b)
+def wordMove (m : Move) (a : Sig) :=
+  mux m.1 (a.rotateRight m.2.2.val) (mux m.2.1 (a.rotateRight (backwards m.2.2).val) a)
+theorem bit_shift (d r : Row) (a : Sig) : bit r (a.rotateRight d.val) = bit (shifted d r) a := by
+  unfold bit
+  rw [BitVec.getLsbD_rotateRight_of_lt d.isLt]
+  by_cases h : r.val < 512-d.val <;> simp [shifted,h,r.isLt]
+theorem bool_mux (p x y : Bool) : (p && x || !p && y) = (if p then x else y) := by cases p <;> simp
+theorem bit_mux (r : Row) (m a b : Sig) :
+    bit r (mux m a b) = if bit r m then bit r a else bit r b := by
+  simp only [bit,mux,BitVec.getLsbD_and,BitVec.getLsbD_or,BitVec.getLsbD_not,r.isLt,
+    decide_true,Bool.true_and]
+  exact bool_mux _ _ _
+theorem bit_move (r : Row) (m : Move) (a : Sig) : bit r (wordMove m a) = bit (rowMove m r) a := by
+  simp only [wordMove,bit_mux,bit_shift,rowMove]
+  cases bit r m.1 <;> cases bit r m.2.1 <;> rfl
+def movedRow (ms : List Move) (r : Row) := ms.foldl (fun j m => rowMove m j) r
+def movedWord (ms : List Move) (a : Sig) := ms.foldr wordMove a
+theorem bit_moved (ms : List Move) (a : Sig) (r : Row) :
+    bit r (movedWord ms a) = bit (movedRow ms r) a := by
+  induction ms generalizing r with
+  | nil => rfl
+  | cons m ms ih => exact (bit_move r m _).trans (ih _)
+theorem moved_eq_rename (ms : List Move) (a : Sig) : movedWord ms a = rename (movedRow ms) a := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro j hj
+  exact (bit_moved ms a ⟨j,hj⟩).trans (bit_rename _ _ ⟨j,hj⟩).symm
+def freeWord (roots : List Sig) (w : Sig) := w==zero || w==one || roots.contains w
+theorem freeWord_ok {u roots w} (ok : freeWord roots w = true) :
+    Available u (roots.map observe) (observe w) := by
+  simp only [freeWord,Bool.or_eq_true,beq_iff_eq,List.contains_eq_mem,decide_eq_true_eq] at ok
+  rcases ok with (rfl | rfl) | hm
+  · exact Or.inr (Or.inl ⟨false,funext bit_zero⟩)
+  · exact Or.inr (Or.inl ⟨true,funext bit_one⟩)
+  · exact Or.inl (List.mem_map_of_mem hm)
+def checkMap (ms : List Move) (raw : List Sig) (T : Sig) (base : List Sig) (G : Sig) :=
+  movedWord ms T == G && raw.all (fun a => freeWord base (movedWord ms a))
+theorem map_correct {u ms raw T base G} (ok : checkMap ms raw T base G = true) :
+    rename (movedRow ms) T = G ∧
+    ∀ a ∈ raw, Available u (base.map observe) (observe (rename (movedRow ms) a)) := by
+  simp only [checkMap,Bool.and_eq_true,beq_iff_eq,List.all_eq_true,moved_eq_rename] at ok
+  exact ⟨ok.1,fun a ha => freeWord_ok (ok.2 a ha)⟩
+theorem lower_map {u ms raw T base G L} (ok : checkMap ms raw T base G = true)
+    (pT : proper T) (nT : plainWord T=true) (nR : raw.all plainWord=true) (pG : proper G)
+    (hL : Lower u base G L) : Lower u raw T L := by
+  obtain ⟨eq,supp⟩ := map_correct ok
+  simpa using lower_slice pT nT nR pG (movedRow ms) eq supp ∅ (by simp) (by simp) L hL
+theorem slice_correct {u ms raw T base G L d} (ok : checkMap ms raw T base G = true)
+    (all : movedWord ms d = one) (properG : proper G) (hL : Lower u base G L) :
+    Slice u raw T d L := by
+  obtain ⟨eq,supp⟩ := map_correct ok
+  have obs : restrictRows (movedRow ms) (observe T) = observe G :=
+    (observe_rename _ _).symm.trans (congrArg observe eq)
+  refine ⟨movedRow ms,base,?_,?_,?_,?_⟩
+  · intro r
+    rw [←bit_moved,all,bit_one]
+  · intro a ha
+    rw [←observe_rename]
+    exact supp a ha
+  · rw [obs]
+    exact observe_proper properG
+  · rw [obs]
+    exact hL
+def witnessB (T : Sig) (roots : List Sig) (a : Sig) (rs : Row × Row) :=
+  (bit rs.1 T != bit rs.2 T) &&
+  roots.all (fun w => w == a || bit rs.1 w == bit rs.2 w)
+theorem witnessB_sound {T roots a rs} (ok : witnessB T roots a rs = true) : Essential T roots a := by
+  simp only [witnessB,Bool.and_eq_true,bne_iff_ne,List.all_eq_true,Bool.or_eq_true,beq_iff_eq] at ok
+  exact ⟨rs.1,rs.2,ok.1,fun w hw hne => (ok.2 w hw).resolve_left hne⟩
+def checkEssential (T : Sig) (raw : List Sig) (xs : List (Sig × Row × Row)) :=
+  plainWord T && raw.all plainWord && xs.all (fun a => witnessB T raw a.1 a.2)
+theorem essential_ok {T raw xs} (ok : checkEssential T raw xs = true) :
+    ∀ a ∈ (xs.map Prod.fst).toFinset, Essential T raw a := by
+  simp only [checkEssential,Bool.and_eq_true] at ok
+  intro a ha
+  obtain ⟨⟨a,r,s⟩,hm,rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp ha)
+  exact witnessB_sound (List.all_eq_true.mp ok.2 _ hm)
+theorem essential_plain {T raw xs} (ok : checkEssential T raw xs = true) :
+    plainWord T=true ∧ raw.all plainWord=true := by
+  simp only [checkEssential,Bool.and_eq_true] at ok
+  exact ok.1
+theorem lower_count {u raw T} (properT : proper T) (xs : List (Sig × Row × Row))
+    (ok : checkEssential T raw xs = true) :
+    Lower u raw T ((xs.map Prod.fst).toFinset.card-1) := by
+  intro p bank hr hit
+  obtain ⟨k,S,hk,run,sub⟩ := reach_live properT (essential_plain ok).1 (essential_plain ok).2 hr hit
+  have le : (xs.map Prod.fst).toFinset.card ≤ S.card := by
+    apply Finset.card_le_card
+    intro a ha
+    obtain ⟨r,s,hd,iso⟩ := essential_ok ok a ha
+    exact raw_required run raw a sub r s hd iso
+  have bound := live_size run
+  omega
+def checkLift (ms : List Move) (T : Sig) (raw : List Sig) (base : List Sig) (G : Sig)
+    (xs : List (Sig × Row × Row)) :=
+  checkMap ms raw T base G && checkEssential T raw xs &&
+    xs.all (fun a => movedWord ms a.1 == zero || movedWord ms a.1 == one)
+theorem lift_ok {u ms T raw base G xs L} (ok : checkLift ms T raw base G xs = true)
+    (properT : proper T) (properG : proper G) (low : Lower u base G L) :
+    Lower u raw T (L+(xs.map Prod.fst).toFinset.card) := by
+  simp only [checkLift,Bool.and_eq_true] at ok
+  obtain ⟨eq,supp⟩ := map_correct ok.1.1
+  apply lower_slice properT (essential_plain ok.1.2).1 (essential_plain ok.1.2).2 properG _ eq supp _ (essential_ok ok.1.2) _ L low
+  intro a ha
+  obtain ⟨⟨v,r,s⟩,hm,rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp ha)
+  have hh := List.all_eq_true.mp ok.2 _ hm
+  simp only [Bool.or_eq_true,beq_iff_eq,moved_eq_rename] at hh
+  rcases hh with h | h
+  · rw [h]
+    exact ⟨false,funext bit_zero⟩
+  · rw [h]
+    exact ⟨true,funext bit_one⟩
+def selected (m : Nat) : List (Nat × Sig) :=
+  (List.range 8).filterMap fun i => if m.testBit i then some (i,inputs.getD i zero) else none
+def vars (m : Nat) := (selected m).map Prod.snd
+def typeWord (t : Nat) : Sig := bin (t/81) (inputs.getD (t/9 % 9) zero) (inputs.getD (t % 9) zero)
+def varsX (m : Nat) : List Sig := if m<512 then vars m else vars m ++ [typeWord (m/512-1)]
+def vertex (m j : Nat) := if m.testBit j then inputs.getD j zero else zero
+def qG_ (m : Nat) : Sig :=
+  let x := vertex m
+  if m.testBit 8 then (x 0 &&& x 3) ||| (x 0 &&& x 4) ||| (x 0 &&& x 5) ||| (x 0 &&& x 6) ||| (x 0 &&& x 7) ||| (x 1 &&& x 4) ||| (x 1 &&& x 6) ||| (x 1 &&& x 7) ||| (x 3 &&& x 5) ||| (x 3 &&& x 6) ||| (x 3 &&& x 7) ||| (x 4 &&& x 6) ||| (x 4 &&& x 7) ||| (x 5 &&& x 7)
+  else (x 0 &&& x 3) ||| (x 1 &&& x 4) ||| (x 0 &&& x 5) ||| (x 2 &&& x 5) ||| (x 1 &&& x 6) ||| (x 2 &&& x 6) ||| (x 3 &&& x 6) ||| (x 4 &&& x 6) ||| (x 0 &&& x 7) ||| (x 1 &&& x 7) ||| (x 2 &&& x 7) ||| (x 3 &&& x 7) ||| (x 5 &&& x 7) ||| (x 6 &&& x 7)
+def cube0 : Nat → Nat
+  | 0 => 0xff
+  | 1 => 0x55
+  | 2 => 0x33
+  | 3 => 0x11
+  | 4 => 0xf
+  | 5 => 0x5
+  | 6 => 0x3
+  | _ => 0x1
+def cube3 : Nat → Nat
+  | 0 => 0x101010101010101
+  | 1 => 0x1000100010001
+  | 2 => 0x10100000101
+  | 3 => 0x100000001
+  | 4 => 0x1010101
+  | 5 => 0x10001
+  | 6 => 0x101
+  | _ => 0x1
+def cube6 : Nat → Nat
+  | 0 => (0x10000000000000001000000000000000100000000000000010000000000000001000000000000000100000000000000010000000000000001)
+  | 1 => (0x1000000000000000000000000000000010000000000000000000000000000000100000000000000000000000000000001)
+  | 2 => (0x100000000000000010000000000000000000000000000000000000000000000010000000000000001)
+  | 3 => (0x10000000000000000000000000000000000000000000000000000000000000001)
+  | 4 => (0x1000000000000000100000000000000010000000000000001)
+  | 5 => (0x100000000000000000000000000000001)
+  | 6 => 0x10000000000000001
+  | _ => 0x1
+def subcube (z o : Nat) : Sig :=
+  let fixed := z ||| o
+  if z &&& o != 0 then zero else
+    BitVec.ofNat 512 ((cube0 (fixed &&& 7)*cube3 ((fixed >>> 3) &&& 7)*cube6 ((fixed >>> 6) &&& 7)) <<< o)
+def fixRows (z o : Nat) : List Move :=
+  (List.range 9).filterMap fun j =>
+    let x := inputs.getD j zero
+    let step := Fin.ofNat 512 (1 <<< j)
+    if z.testBit j then some (zero,x,step)
+    else if o.testBit j then some (~~~x,zero,step) else none
+def swapRows (v : Nat) : Move :=
+  let i := v &&& 15
+  let j := v >>> 4
+  let a := inputs.getD i zero
+  let b := inputs.getD j zero
+  let d := (1 <<< j)-(1 <<< i)
+  (a &&& ~~~b,b &&& ~~~a,Fin.ofNat 512 d)
+def supportPairs (t : Nat) (mask : Nat) : List (Sig × Row × Row) :=
+  (selected mask).map fun (i,a) =>
+    let r := if t/81==2 && i==t/9 % 9 then 1 <<< (t % 9) else if t/81==2 && i==t % 9 then 1 <<< (t/9 % 9) else 0
+    (a,Fin.ofNat 512 r,Fin.ofNat 512 (r ||| (1 <<< i)))
+def graphPairs (m hints : Nat) : List (Sig × Row × Row) :=
+  (selected m).map fun (i,a) =>
+    let r := 1 <<< ((hints >>> (4*i)) &&& 15)
+    (a,Fin.ofNat 512 r,Fin.ofNat 512 (r ||| (1 <<< i)))
+def properB (T : Sig) := T != zero && T != one
+theorem qP_ (T : Sig) (h : properB T = true) : proper T := by
+  simpa only [properB,proper,Bool.and_eq_true,bne_iff_ne] using h
+abbrev ColumnInfo := Nat × Nat × Nat × Nat × Nat
+def colFree (m z o : Nat) := m ^^^ (m &&& (z ||| o))
+def chartGoal (m : Nat) : Sig := qG_ m
+def rawMask (m : Nat) (c : ColumnInfo) : Nat := m % 512+512*(c.1/512)
+def columnPairs (m z s : Nat) (G : Sig) : List (Sig × Row × Row) :=
+  if m.testBit 8 then
+    (selected s).map fun (i,a) =>
+      let v := 1 <<< i
+      let candidates := (0 :: (List.range 8).map (fun j => 1 <<< j))
+      let r := (candidates.find? fun r =>
+        bit (Fin.ofNat 512 r) G != bit (Fin.ofNat 512 (r ||| v)) G).getD 0
+      (a, Fin.ofNat 512 r, Fin.ofNat 512 (r ||| v))
+  else supportPairs (z/512+80) s
+def colCheck (m : Nat) (c : ColumnInfo) (prior : Nat → Nat) : Bool :=
+  let (z,o,q,s,L) := c
+  let ms := fixRows z o
+  let raw := rawMask m c
+  let free := colFree raw (z % 512) o
+  let G := movedWord ms (chartGoal m)
+  let xs := columnPairs m z s G
+  let count := (xs.map Prod.fst).toFinset.card
+  properB G && checkMap ms (varsX raw) (chartGoal m) (varsX free) G &&
+    (movedWord ms (subcube z o)==one) &&
+    (if q=0 then checkEssential G (varsX free) xs && decide (L ≤ count-1)
+     else properB (qG_ q) &&
+       checkLift (fixRows (colFree free q 0) 0) G (varsX free) (varsX q) (qG_ q) xs &&
+       decide (L ≤ prior q+count))
+theorem col_sound {u} {m : Nat} (c : ColumnInfo) (prior : Nat → Nat)
+    (valid : ∀ q, Lower u (varsX q) (qG_ q) (prior q))
+    (ok : colCheck m c prior = true) : Slice u (varsX (rawMask m c)) (chartGoal m) (subcube c.1 c.2.1) c.2.2.2.2 := by
+  revert ok
+  obtain ⟨z,o,q,s,L⟩ := c
+  intro ok
+  let ms := fixRows z o
+  let raw := rawMask m (z,o,q,s,L)
+  let free := colFree raw (z % 512) o
+  let G := movedWord ms (chartGoal m)
+  let xs := columnPairs m z s G
+  change (((properB G && checkMap ms (varsX raw) (chartGoal m) (varsX free) G) &&
+    (movedWord ms (subcube z o)==one)) && _) = true at ok
+  simp only [Bool.and_eq_true,beq_iff_eq] at ok
+  apply slice_correct ok.1.1.2 ok.1.2 (qP_ _ ok.1.1.1)
+  intro p bank hr ha
+  have hh := ok.2
+  by_cases hq : q=0
+  · simp only [colCheck,hq,if_true,Bool.and_eq_true,decide_eq_true_eq] at hh
+    exact hh.2.trans (lower_count (qP_ _ ok.1.1.1) xs hh.1 p bank hr ha)
+  · simp only [colCheck,hq,if_false,Bool.and_eq_true,decide_eq_true_eq] at hh
+    exact hh.2.trans (lift_ok hh.1.2 (qP_ _ ok.1.1.1) (qP_ _ hh.1.1) (valid q) p bank hr ha)
+def carryOK (old rep : Nat) (swaps : List Nat) :=
+  (properB (qG_ old) && plainWord (qG_ old) && (varsX old).all plainWord) && properB (qG_ rep) &&
+    checkMap (swaps.map swapRows) (varsX old) (qG_ old) (varsX rep) (qG_ rep)
+theorem carry_of {u old rep L swaps} (ok : carryOK old rep swaps = true)
+    (h : Lower u (varsX rep) (qG_ rep) L) : Lower u (varsX old) (qG_ old) L := by
+  simp only [carryOK,Bool.and_eq_true] at ok
+  exact lower_map ok.2 (qP_ _ ok.1.1.1.1) ok.1.1.1.2 ok.1.1.2 (qP_ _ ok.1.2) h
+def boundsBefore (entries : List (Nat × Nat)) (q : Nat) :=
+  ((entries.find? (fun a => a.1 == q)).map Prod.snd).getD 0
+theorem before_sound {u} (entries : List (Nat × Nat))
+    (sound : ∀ e ∈ entries, Lower u (varsX e.1) (qG_ e.1) e.2) (q : Nat) :
+    Lower u (varsX q) (qG_ q) (boundsBefore entries q) := by
+  unfold boundsBefore
+  cases h : entries.find? (fun a => a.1 == q) with
+  | none => exact fun _ _ _ _ => Nat.zero_le _
+  | some e =>
+    have he := List.mem_of_find?_eq_some h
+    have hit : (fun a : Nat × Nat => a.1 == q) e = true := List.find?_some (p:=fun a : Nat × Nat => a.1 == q) (a:=e) h
+    have eq : e.1=q := beq_iff_eq.mp hit
+    simpa only [Option.map_some,Option.getD_some,eq] using sound e he
+abbrev BoundPool := Sig × Nat × Nat × List Sig
+def BoundPool.domain (c : BoundPool) : Sig := c.1
+def BoundPool.bound (c : BoundPool) : Nat := c.2.1
+def BoundPool.paid (c : BoundPool) : Nat := c.2.2.1
+def BoundPool.wires (c : BoundPool) : List Sig := c.2.2.2
+def ValidPool (u : Bool) (raw : List Sig) (T : Sig) (c : BoundPool) :=
+  ∃ (f : Row → Row) (roots : List Sig) (bank : List (Wire Row)),
+    (∀ r, bit (f r) c.domain = true) ∧ ¬Constant (restrictRows f (observe T)) ∧
+    (∀ q ws, Reach u (roots.map observe) q ws → Available u ws (restrictRows f (observe T)) → c.bound ≤ q) ∧
+    Reach u (roots.map observe) c.paid bank ∧ poolSupply u f bank c.wires ∧ True
+theorem build_valid {u raw T d lb} (h : Slice u raw T d lb) (cs : List Choice) {ws}
+    (build : makePool u d raw cs = some ws) : ValidPool u raw T ⟨d,lb,cs.length,ws⟩ := by
+  obtain ⟨f,roots,dom,sup,nc,prior⟩ := h
+  obtain ⟨bank,hr,hs⟩ := makePool_sound dom (Reach.start (roots:=roots.map observe)) sup cs build
+  exact ⟨f,roots,bank,dom,nc,prior,by simpa [BoundPool.paid] using hr,hs,trivial⟩
+theorem valid_exclude {u raw T c} (valid : ValidPool u raw T c) (k : Nat) (rest : List Sig)
+    (choice : Choice) (paid : Bool)
+    (known : ∀ a ∈ rest, availableB u c.domain c.wires a = true)
+    (buy : if paid then choiceOK u c.domain c.wires choice = true
+       else availableB u c.domain c.wires (choiceVal choice) = true)
+    (bound : k+c.paid+paid.toNat <
+      c.bound+(choiceVal choice :: rest).countP (isMaskedConstant c.domain))
+    (nd : (choiceVal choice :: rest).Nodup) :
+    Impossible u T k (choiceVal choice :: rest).toFinset := by
+  intro t ht run
+  obtain ⟨f,roots,bank,dom,nc,lo,hp,hs,_⟩ := valid
+  let ws := choiceVal choice::rest
+  have done (n : Nat) (out : List (Wire Row)) (reach : Reach u (roots.map observe) n out)
+      (zs : poolSupply u f out (choiceVal choice::rest)) (le : n = c.paid+paid.toNat) : False := by
+    have covered : supply u out ((ws.map observe).map (restrictRows f)) := by
+      intro v hv
+      obtain ⟨_,hm,rfl⟩ := List.mem_map.mp hv
+      obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hm
+      exact zs _ ha
+    have b := projected_bound f (list_run run ws nd rfl) nc reach covered lo
+    have cm := count_constants dom ws
+    change k+c.paid+paid.toNat < c.bound+ws.countP (isMaskedConstant c.domain) at bound
+    omega
+  cases paid with
+  | false =>
+    apply done _ _ hp _ rfl
+    intro a h
+    rcases List.mem_cons.mp h with rfl | hm
+    · exact availableB_sound dom hs buy
+    · exact availableB_sound dom hs (known _ hm)
+  | true =>
+    obtain ⟨out,hr,hc⟩ := pay_choice dom hp hs choice buy
+    apply done _ _ hr _ rfl
+    intro a h
+    rcases List.mem_cons.mp h with rfl | hm
+    · exact hc _ (by simp)
+    · have point : ∀ v ∈ c.wires, Available u out (restrictRows f (observe v)) :=
+        fun v hu => hc v (List.mem_cons_of_mem _ hu)
+      exact availableB_sound dom point (known _ hm)
+def scalarPoolCut (u : Bool) (c : BoundPool) (k : Nat) (rest : List Sig) (op : Choice) :=
+  let z := choiceVal op
+  let extra := !(availableB u c.domain c.wires z)
+  ((k+c.paid+extra.toNat < c.bound+(z::rest).countP (isMaskedConstant c.domain)) &&
+    rest.all (availableB u c.domain c.wires)) && (!extra || choiceOK u c.domain c.wires op)
+theorem scalarPoolCut_sound {u raw T c} (valid : ValidPool u raw T c) {k rest op}
+    (nd : (choiceVal op::rest).Nodup) (cut : scalarPoolCut u c k rest op = true) :
+    Impossible u T k (choiceVal op::rest).toFinset := by
+  let extra := !(availableB u c.domain c.wires (choiceVal op))
+  apply valid_exclude valid k rest op extra _ _ _ nd
+  · simp only [scalarPoolCut,Bool.and_eq_true,List.all_eq_true] at cut
+    exact cut.1.2
+  · simp only [scalarPoolCut,Bool.and_eq_true,Bool.or_eq_true] at cut
+    cases he : availableB u c.domain c.wires (choiceVal op) <;> simp_all [extra]
+  · simp only [scalarPoolCut,Bool.and_eq_true,decide_eq_true_eq] at cut
+    exact cut.1.1
+def materialize (u : Bool) (raw : List Sig) (cs : List Choice) (d : Sig) (lb : Nat) : Option BoundPool :=
+  (makePool u d raw cs).map (fun pool => ⟨d,lb,cs.length,pool⟩)
+theorem materialize_sound {u raw T d L cs c} (slice : Slice u raw T d L)
+    (h : materialize u raw cs d L = some c) : ValidPool u raw T c := by
+  unfold materialize at h
+  cases he : makePool u d raw cs with
+  | none => simp [he] at h
+  | some pool =>
+    simp only [he,Option.map_some,Option.some.injEq] at h
+    subst c
+    exact build_valid slice cs he
+abbrev Bits := BitVec 152
+abbrev Signals := Bits × Bits
+abbrev Decor := Sig × Signals
+def ofRows {n : Nat} (r : Fin n → Row) (v : Sig) : BitVec n :=
+  (BitVec.ofBoolListLE (List.ofFn (fun i => bit (r i) v))).cast List.length_ofFn
+theorem ofRows_bit {n : Nat} (r : Fin n → Row) (v : Sig) (i : Fin n) :
+    (ofRows r v).getLsbD i.val = bit (r i) v := by
+  simp only [ofRows,BitVec.getLsbD_cast,BitVec.getLsbD_ofBoolListLE,List.getD_eq_getElem?_getD,List.getElem?_ofFn]
+  simp [i.isLt]
+def pairSig (r s : Fin 152 → Row) (a : Sig) : Signals := (ofRows r a,ofRows s a)
+def properPairs (T : Sig) (r s : Fin 152 → Row) :=
+  ∀ i, bit (r i) T = true ∧ bit (s i) T = false
+theorem pair_sep {T r s} (h : properPairs T r s) : Sep T 152 r s (pairSig r s) := by
+  exact ⟨h,fun a i => ⟨ofRows_bit _ _ _,ofRows_bit _ _ _⟩⟩
+def faithful (r s : Fin 152 → Row) (x : Decor) := x.2 = pairSig r s x.1
+def bv {n : Nat} (d : Nat) (a b : BitVec n) : BitVec n :=
+  if d=0 then a &&& b else if d=1 then a ||| b else if d=2 then a &&& ~~~b else ~~~a &&& b
+def dbin (d : Nat) (x y : Decor) : Decor := (bin d x.1 y.1,bv d x.2.1 y.2.1,bv d x.2.2 y.2.2)
+theorem ofRows_bin {n : Nat} (r : Fin n → Row) (d : Nat) (a b : Sig) :
+    ofRows r (bin d a b) = bv d (ofRows r a) (ofRows r b) := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro j hj
+  have h := ofRows_bit r (bin d a b) ⟨j,hj⟩
+  rw [bit_bin,←ofRows_bit r a ⟨j,hj⟩,←ofRows_bit r b ⟨j,hj⟩] at h
+  rw [h]
+  unfold bv
+  split_ifs <;> simp [hj]
+theorem faithful_bin {r s x y} (d) (hx : faithful r s x) (hy : faithful r s y) :
+    faithful r s (dbin d x y) := by
+  change x.2 = _ at hx
+  change y.2 = _ at hy
+  simp only [faithful,dbin,pairSig,ofRows_bin,hx,hy]
+def defaultDecor : Decor := (zero,0,0)
+theorem faithful_default (r s) : faithful r s defaultDecor := by
+  apply Prod.ext <;> apply BitVec.eq_of_getLsbD_eq <;> intro j hj
+  · change (0 : Bits).getLsbD j = (ofRows r zero).getLsbD j
+    rw [show (ofRows r zero).getLsbD j = bit (r ⟨j,hj⟩) zero from ofRows_bit _ _ ⟨j,hj⟩,bit_zero]
+    simp
+  · change (0 : Bits).getLsbD j = (ofRows s zero).getLsbD j
+    rw [show (ofRows s zero).getLsbD j = bit (s ⟨j,hj⟩) zero from ofRows_bit _ _ ⟨j,hj⟩,bit_zero]
+    simp
+theorem faithful_get {r s ws} (all : ∀ v ∈ ws, faithful r s v) (i : Nat) :
+    faithful r s (List.getD ws i defaultDecor) := by
+  simp only [List.getD_eq_getElem?_getD]
+  cases e : ws[i]? with
+  | none => exact faithful_default _ _
+  | some v => exact all _ (List.mem_of_getElem? e)
+def decodeBank (n : Nat) (bits : Nat) (ws : List Decor) : List Decor :=
+  match n with
+  | 0 => ws
+  | k+1 =>
+    let a := ws.getD (bits &&& 15) defaultDecor
+    let b := ws.getD ((bits >>> 4) &&& 15) defaultDecor
+    decodeBank k (bits >>> 10) (ws++[dbin ((bits >>> 8) &&& 3) a b])
+theorem decode_faithful (n bits) (ws) (r s) (base : ∀ v ∈ ws, faithful r s v) :
+    ∀ v ∈ decodeBank n bits ws, faithful r s v := by
+  induction n generalizing ws bits with
+  | zero => exact base
+  | succ n ih =>
+    apply ih
+    intro v hv
+    rcases List.mem_append.mp hv with hw | hz
+    · exact base _ hw
+    · obtain rfl := List.mem_singleton.mp hz
+      exact faithful_bin _ (faithful_get base _) (faithful_get base _)
+def asRow (cols : Nat → Bits) (i : Fin 152) : Row :=
+  (BitVec.ofBoolListLE (List.ofFn (fun j : Fin 9 => (cols j.val).getLsbD i.val))).toFin.cast
+    (by simp [List.length_ofFn])
+theorem coordinate0 : ∀ r : Row, bit r (inputs.getD 0 zero) = r.val.testBit 0 := by decide +kernel
+theorem coordinate1 : ∀ r : Row, bit r (inputs.getD 1 zero) = r.val.testBit 1 := by decide +kernel
+theorem coordinate2 : ∀ r : Row, bit r (inputs.getD 2 zero) = r.val.testBit 2 := by decide +kernel
+theorem coordinate3 : ∀ r : Row, bit r (inputs.getD 3 zero) = r.val.testBit 3 := by decide +kernel
+theorem coordinate4 : ∀ r : Row, bit r (inputs.getD 4 zero) = r.val.testBit 4 := by decide +kernel
+theorem coordinate5 : ∀ r : Row, bit r (inputs.getD 5 zero) = r.val.testBit 5 := by decide +kernel
+theorem coordinate6 : ∀ r : Row, bit r (inputs.getD 6 zero) = r.val.testBit 6 := by decide +kernel
+theorem coordinate7 : ∀ r : Row, bit r (inputs.getD 7 zero) = r.val.testBit 7 := by decide +kernel
+theorem coordinate8 : ∀ r : Row, bit r (inputs.getD 8 zero) = r.val.testBit 8 := by decide +kernel
+theorem input_coords : ∀ (j : Fin 9) (r : Row),
+    bit r (inputs.getD j.val zero) = r.val.testBit j.val := by
+  intro j r
+  fin_cases j
+  · exact coordinate0 r
+  · exact coordinate1 r
+  · exact coordinate2 r
+  · exact coordinate3 r
+  · exact coordinate4 r
+  · exact coordinate5 r
+  · exact coordinate6 r
+  · exact coordinate7 r
+  · exact coordinate8 r
+theorem asRow_bit (cols : Nat → Bits) (i : Fin 152) (j : Fin 9) :
+    bit (asRow cols i) (inputs.getD j.val zero) = (cols j.val).getLsbD i.val := by
+  rw [input_coords]
+  change (BitVec.ofBoolListLE (List.ofFn (fun h : Fin 9 => (cols h.val).getLsbD i.val))).getLsbD j.val = _
+  simp only [BitVec.getLsbD_ofBoolListLE,List.getD_eq_getElem?_getD,List.getElem?_ofFn]
+  simp [j.isLt]
+def rawDecor (m : Nat) (p q : Nat → Bits) : List Decor :=
+  (selected m).map (fun (j,a) => (a,p j,q j))
+theorem selected_entry {m j a} (h : (j,a) ∈ selected m) :
+    j<9 ∧ a=inputs.getD j zero := by
+  obtain ⟨v,hv,hh⟩ := List.mem_filterMap.mp h
+  simp only [List.mem_range] at hv
+  split at hh
+  next =>
+    cases hh
+    exact ⟨by omega,rfl⟩
+  next => contradiction
+theorem raw_faithful (m) (p q : Nat → Bits) :
+    ∀ a ∈ rawDecor m p q, faithful (asRow p) (asRow q) a := by
+  intro a ha
+  obtain ⟨⟨j,v⟩,hv,rfl⟩ := List.mem_map.mp ha
+  obtain ⟨hj,rfl⟩ := selected_entry hv
+  apply Prod.ext <;> apply BitVec.eq_of_getLsbD_eq <;> intro i hi
+  · exact (asRow_bit p ⟨i,hi⟩ ⟨j,hj⟩).symm.trans (ofRows_bit _ _ ⟨i,hi⟩).symm
+  · exact (asRow_bit q ⟨i,hi⟩ ⟨j,hj⟩).symm.trans (ofRows_bit _ _ ⟨i,hi⟩).symm
+def liftGoal (m : Nat) (v : Nat → Bits) : Bits :=
+  let x := fun j => if m.testBit j then v j else 0
+  if m.testBit 8 then (x 0 &&& x 3) ||| (x 0 &&& x 4) ||| (x 0 &&& x 5) ||| (x 0 &&& x 6) ||| (x 0 &&& x 7) ||| (x 1 &&& x 4) ||| (x 1 &&& x 6) ||| (x 1 &&& x 7) ||| (x 3 &&& x 5) ||| (x 3 &&& x 6) ||| (x 3 &&& x 7) ||| (x 4 &&& x 6) ||| (x 4 &&& x 7) ||| (x 5 &&& x 7)
+  else (x 0 &&& x 3) ||| (x 1 &&& x 4) ||| (x 0 &&& x 5) ||| (x 2 &&& x 5) ||| (x 1 &&& x 6) ||| (x 2 &&& x 6) ||| (x 3 &&& x 6) ||| (x 4 &&& x 6) ||| (x 0 &&& x 7) ||| (x 1 &&& x 7) ||| (x 2 &&& x 7) ||| (x 3 &&& x 7) ||| (x 5 &&& x 7) ||| (x 6 &&& x 7)
+theorem bit_vertex (m : Nat) (v : Nat → Bits) (i : Fin 152) (j : Fin 9) :
+    bit (asRow v i) (vertex m j.val) =
+    ((if m.testBit j.val then v j.val else 0) : Bits).getLsbD i.val := by
+  by_cases hh : m.testBit j.val = true
+  · simpa [vertex,hh] using asRow_bit v i j
+  · simp [vertex,hh,bit_zero]
+theorem bit_liftGoal (m : Nat) (v : Nat → Bits) (i : Fin 152) :
+    bit (asRow v i) (qG_ m) = (liftGoal m v).getLsbD i.val := by
+  have pos (j : Nat) (hj : j<9) : (vertex m j).getLsbD (asRow v i).val = ((if m.testBit j then v j else 0) : Bits).getLsbD i.val := bit_vertex m v i ⟨j,hj⟩
+  by_cases ht : m.testBit 8 = true
+  · simp only [bit,qG_,liftGoal,if_pos ht,BitVec.getLsbD_and,BitVec.getLsbD_or,
+      pos 0 (by decide),pos 1 (by decide),pos 2 (by decide),pos 3 (by decide),
+      pos 4 (by decide),pos 5 (by decide),pos 6 (by decide),pos 7 (by decide)]
+  · simp only [bit,qG_,liftGoal,if_neg ht,BitVec.getLsbD_and,BitVec.getLsbD_or,
+      pos 0 (by decide),pos 1 (by decide),pos 2 (by decide),pos 3 (by decide),
+      pos 4 (by decide),pos 5 (by decide),pos 6 (by decide),pos 7 (by decide)]
+abbrev Cov := Bits × Bits × Bits
+def addCov (z : Bits) (c : Cov) : Cov :=
+  (z ||| c.1,(z &&& ~~~c.1) ||| (c.2.1 &&& ~~~z),
+   (z &&& c.2.1) ||| (c.2.2 &&& ~~~z))
+def coverage (d : Bool) (v : List Decor) : Cov :=
+  v.foldr (fun a c => addCov (column d a.2) c) (0,0,0)
+def takeOne (c : Cov) (a : Bits) : Bits := c.1 &&& ~~~(c.2.1 &&& a)
+def takeTwo (c : Cov) (a b : Bits) : Bits :=
+  c.1 &&& ~~~((c.2.1 &&& (a ||| b)) ||| (c.2.2 &&& (a &&& b)))
+private theorem cov_one (c : Cov) (a : Bits) : takeOne (addCov a c) a=c.1 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [takeOne,addCov,BitVec.getLsbD_or,BitVec.getLsbD_and,BitVec.getLsbD_not,hi,decide_true,Bool.true_and]
+  cases a.getLsbD i <;> cases c.1.getLsbD i <;> cases c.2.1.getLsbD i <;> rfl
+private theorem cov_two (c : Cov) (a b : Bits) : takeTwo (addCov a (addCov b c)) a b=c.1 := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [takeTwo,addCov,BitVec.getLsbD_or,BitVec.getLsbD_and,BitVec.getLsbD_not,hi,decide_true,Bool.true_and]
+  cases a.getLsbD i <;> cases b.getLsbD i <;> cases c.1.getLsbD i <;>
+    cases c.2.1.getLsbD i <;> cases c.2.2.getLsbD i <;> rfl
+private theorem add_swap (c : Cov) (a b : Bits) : addCov a (addCov b c)=addCov b (addCov a c) := by
+  apply Prod.ext
+  · apply BitVec.eq_of_getLsbD_eq
+    intro i hi
+    simp only [addCov,BitVec.getLsbD_or]
+    cases a.getLsbD i <;> cases b.getLsbD i <;> rfl
+  · apply Prod.ext <;> apply BitVec.eq_of_getLsbD_eq <;> intro i hi <;>
+      simp only [addCov,BitVec.getLsbD_or,BitVec.getLsbD_and,BitVec.getLsbD_not,hi,decide_true,Bool.true_and] <;>
+      cases a.getLsbD i <;> cases b.getLsbD i <;> cases c.1.getLsbD i <;>
+      cases c.2.1.getLsbD i <;> cases c.2.2.getLsbD i <;> rfl
+private theorem cov_perm (d : Bool) {l r : List Decor} (h : l.Perm r) : coverage d l=coverage d r := by
+  induction h with
+  | nil => rfl
+  | cons a _ ih => exact congrArg (addCov (column d a.2)) ih
+  | swap a b t => exact add_swap _ _ _
+  | trans _ _ h1 h2 => exact h1.trans h2
+theorem cov_word (d : Bool) (v : List Decor) {r s} (good : ∀ a ∈ v, faithful r s a) :
+    (coverage d v).1 = covered d (pairSig r s) (v.map Prod.fst) := by
+  induction v with
+  | nil => rfl
+  | cons a v ih =>
+    change (column d a.2 ||| (coverage d v).1) = column d (pairSig r s a.1) ||| _
+    rw [show a.2=pairSig r s a.1 from good _ (by simp),ih (fun a ha => good a (by simp [ha]))]
+def delOne (ws : List Decor) (a : Decor) (keep : Bool) :=
+  if keep then ws else ws.erase a
+def delTwo (ws : List Decor) (a b : Decor) (ka kb : Bool) :=
+  delOne (delOne ws a ka) b kb
+theorem delOne_perm {ws : List Decor} (a : Decor) (ha : a ∈ ws) :
+    ws.Perm (a::ws.erase a) := List.perm_cons_erase ha
+theorem cover_one {ws : List Decor} (d : Bool) (a : Decor) (ha : a ∈ ws) (keep : Bool) :
+    (coverage d (delOne ws a keep)).1 =
+      (if keep then (coverage d ws).1 else takeOne (coverage d ws) (column d a.2)) := by
+  cases keep
+  · change (coverage d (ws.erase a)).1 = takeOne (coverage d ws) _
+    rw [cov_perm d (delOne_perm a ha)]
+    exact (cov_one _ _).symm
+  · rfl
+theorem delTwo_perm {ws : List Decor} (a b : Decor) (ha : a ∈ ws) (hb : b ∈ ws) (hne : a≠b) :
+    ws.Perm (a::b::(ws.erase a).erase b) := by
+  have hm : b ∈ ws.erase a := (List.mem_erase_of_ne (Ne.symm hne)).mpr hb
+  exact (delOne_perm a ha).trans (List.Perm.cons _ (delOne_perm b hm))
+theorem cover_two {ws : List Decor} (d : Bool) (a b : Decor) (ha : a ∈ ws) (hb : b ∈ ws)
+    (ne : a ≠ b) (ka kb : Bool) :
+    (coverage d (delTwo ws a b ka kb)).1 =
+      (if ka then (if kb then (coverage d ws).1 else takeOne (coverage d ws) (column d b.2))
+       else if kb then takeOne (coverage d ws) (column d a.2)
+       else takeTwo (coverage d ws) (column d a.2) (column d b.2)) := by
+  cases ka <;> cases kb
+  · change (coverage d ((ws.erase a).erase b)).1 = takeTwo (coverage d ws) _ _
+    rw [cov_perm d (delTwo_perm a b ha hb ne)]
+    exact (cov_two _ _ _).symm
+  · exact cover_one d a ha false
+  · exact cover_one d b hb false
+  · rfl
+def sameWords (a b : List Sig) := (a.all (fun x => b.contains x)) && (b.all (fun x => a.contains x))
+theorem sameWords_sound {xs ys} (h : sameWords xs ys = true) : xs.toFinset=ys.toFinset := by
+  simp only [sameWords,Bool.and_eq_true,List.all_eq_true,List.contains_eq_mem,decide_eq_true_eq] at h
+  ext a
+  simp only [List.mem_toFinset]
+  exact ⟨h.1 a,h.2 a⟩
+def keyWord (v : Sig) :=
+  let n := v.toNat % 2305843009213693921
+  (n*(n+971)) % 2305843009213693921
+def keySet (xs : List Sig) := xs.foldl (fun v x => v+keyWord x) 0
+def closeChild (u : Bool) (pools : List BoundPool) (links : Nat → List (List Sig)) (k : Nat)
+    (rest : List Sig) (op : Choice) :=
+  let ws := choiceVal op::rest
+  (links (keySet ws)).any (sameWords ws) || pools.any (fun p => scalarPoolCut u p k rest op)
+theorem closeChild_sound {u raw T pools links k rest op}
+    (pValid : ∀ p ∈ pools, ValidPool u raw T p)
+    (lValid : ∀ tag xs, xs ∈ links tag → Impossible u T k (List.toFinset xs))
+    (nd : (choiceVal op :: rest).Nodup)
+    (h : closeChild u pools links k rest op = true) :
+    Impossible u T k (choiceVal op :: rest).toFinset := by
+  simp only [closeChild,Bool.or_eq_true,List.any_eq_true] at h
+  rcases h with ⟨xs,hx,ok⟩ | ⟨p,hp,ok⟩
+  · rw [sameWords_sound ok]
+    exact lValid _ _ hx
+  · exact scalarPoolCut_sound (pValid _ hp) nd ok
+abbrev CovPair := Cov × Bool
+def preCov (u : Bool) (ws : List Decor) : CovPair := (coverage (!u) ws,u)
+def restCov (v : Cov) (a b : Bits) (ka kb : Bool) :=
+  if ka then (if kb then v.1 else takeOne v b) else if kb then takeOne v a else takeTwo v a b
+theorem delOne_sub (ws : List Decor) (a : Decor) (k : Bool) : (delOne ws a k).Sublist ws := by
+  cases k
+  · exact List.erase_sublist
+  · exact List.Sublist.refl _
+theorem keep_sub (ws : List Decor) (a b : Decor) (ka kb : Bool) :
+    (delTwo ws a b ka kb).Sublist ws := (delOne_sub _ _ _).trans (delOne_sub _ _ _)
+theorem len_keep (ws : List Decor) (a b : Decor) (ka kb : Bool) (ha : a ∈ ws) (hb : b ∈ ws) (ne : a≠b) :
+    (delTwo ws a b ka kb).length =
+      ws.length - (if ka then 0 else 1) - (if kb then 0 else 1) := by
+  have hm : b ∈ ws.erase a := (List.mem_erase_of_ne (Ne.symm ne)).mpr hb
+  cases ka <;> cases kb <;> simp [delTwo,delOne,List.length_erase_of_mem ha,List.length_erase_of_mem hb,List.length_erase_of_mem hm]
+def movedChoice (op : Nat) (a b : Decor) : Choice := (op,a.1,b.1)
+abbrev NodeContext := Nat × Nat × List Decor × CovPair × List BoundPool × (Nat → List (List Sig))
+def evalMove (c : NodeContext) (op : Nat) (a b z : Decor) (ka kb : Bool) :=
+  let (cap,n,ws,cov,pools,links) := c
+  let len := 1+(n - (if ka then 0 else 1) - (if kb then 0 else 1))
+  if len>cap then true else
+    let d := !cov.2
+    let rs := restCov cov.1 (column d a.2) (column d b.2) ka kb
+    if (rs ||| column d z.2) != BitVec.allOnes 152 then true else
+    if !properB z.1 || ws.any (fun v => v.1==z.1) then true else
+      let rest := (delTwo ws a b ka kb).map Prod.fst
+      closeChild cov.2 pools links (cap-1) rest (movedChoice op a b)
+def moveFront (ws : List Decor) (op : Nat) (a b : Decor) (ka kb : Bool) :=
+  (dbin op a b).1 :: (delTwo ws a b ka kb).map Prod.fst
+theorem evalMove_sound {u raw T r s ws pools links cap a b op ka kb}
+    (pairs : properPairs T r s) (faith : ∀ w ∈ ws, faithful r s w)
+    (nd : (ws.map Prod.fst).Nodup) (ha : a ∈ ws) (hb : b ∈ ws)
+    (ne : a≠b) (hcap : 0<cap)
+    (pv : ∀ p ∈ pools, ValidPool u raw T p)
+    (lv : ∀ tag xs, xs ∈ links tag → Impossible u T (cap-1) (List.toFinset xs))
+    (pro : proper (dbin op a b).1) (fresh : (dbin op a b).1 ∉ ws.map Prod.fst)
+    (test : evalMove (cap,ws.length,ws,preCov u ws,pools,links) op a b (dbin op a b) ka kb = true) :
+    Impossible u T (cap-1) (moveFront ws op a b ka kb).toFinset := by
+  let z := dbin op a b
+  let rest := delTwo ws a b ka kb
+  let child := z.1 :: rest.map Prod.fst
+  have sub : rest.Sublist ws := keep_sub _ _ _ _ _
+  have ndc : child.Nodup := List.nodup_cons.mpr ⟨fun hm => fresh ((sub.map _).subset hm),
+    nd.sublist (sub.map _)⟩
+  have fr : ws.any (fun v => v.1==z.1) = false := by
+    apply Bool.eq_false_iff.mpr
+    intro hh
+    obtain ⟨x,hx,he⟩ := List.any_eq_true.mp hh
+    exact fresh (beq_iff_eq.mp he ▸ List.mem_map_of_mem hx)
+  have pp : properB z.1 = true := by simpa [properB,proper] using pro
+  have leq : 1+(ws.length-(if ka then 0 else 1)-(if kb then 0 else 1)) = child.length := by
+    change _ = (z.1::rest.map Prod.fst).length
+    rw [List.length_cons,List.length_map,len_keep _ _ _ _ _ ha hb ne,Nat.add_comm 1]
+  intro k hk h
+  have hsz := live_size h
+  change child.toFinset.card ≤ k+1 at hsz
+  rw [List.toFinset_card_of_nodup ndc] at hsz
+  have len : child.length ≤ cap := by omega
+  unfold evalMove at test
+  change (if 1+(ws.length-_ - _) > cap then true else _) = true at test
+  rw [leq,if_neg (by omega)] at test
+  have sep := cover_required h (pair_sep pairs)
+  let d := !u
+  have g : (coverage d rest).1 = covered d (pairSig r s) (rest.map Prod.fst) :=
+    cov_word _ _ (fun v hv => faith _ (sub.subset hv))
+  have rz : (coverage d rest).1 = restCov (coverage d ws) (column d a.2) (column d b.2) ka kb :=
+    cover_two d a b ha hb ne ka kb
+  have hf := faithful_bin op (faith _ ha) (faith _ hb)
+  change column d (pairSig r s z.1) ||| covered d (pairSig r s) (rest.map Prod.fst) = _ at sep
+  change z.2 = pairSig r s z.1 at hf
+  rw [←hf,←g,rz,BitVec.or_comm] at sep
+  have be : ((restCov (coverage (!u) ws) (column (!u) a.2) (column (!u) b.2) ka kb ||| column (!u) z.2) != BitVec.allOnes 152) = false := by
+    simpa using sep
+  change (if (restCov (coverage (!u) ws) (column (!u) a.2) (column (!u) b.2) ka kb ||| column (!u) z.2) != BitVec.allOnes 152 then true else if !properB z.1 || ws.any (fun v => v.1==z.1) then true else _) = true at test
+  rw [be,pp,fr] at test
+  exact closeChild_sound (op:=movedChoice op a b) (rest:=rest.map Prod.fst) pv lv ndc test k hk h
+def testPair (ctx : NodeContext) (a b : Decor) (op : Nat) :=
+  let z := dbin op a b
+  let attempt := evalMove ctx op a b z
+  attempt false false && attempt true false && attempt false true && attempt true true
+def opsOf (u : Bool) : List Nat := if u then [0,1,2,3] else [0,1]
+theorem opsOf_mem {u d} (h : allowed u d) : d ∈ opsOf u := by
+  rcases allowed_four h with rfl | rfl | ⟨rfl,rfl⟩ | ⟨rfl,rfl⟩
+  · cases u <;> simp [opsOf]
+  · cases u <;> simp [opsOf]
+  · simp [opsOf]
+  · simp [opsOf]
+def testRow (ctx : NodeContext) (a : Decor) (bs : List Decor) :=
+    bs.all (fun b => (opsOf ctx.2.2.2.1.2).all (testPair ctx a b))
+def testAll (ctx : NodeContext) : List Decor → Bool
+  | [] => true
+  | a::bs => testRow ctx a bs && testAll ctx bs
+theorem all_binary {ctx ws} (h : testAll ctx ws=true) {a b : Decor} (ha : a∈ws) (hb : b∈ws)
+    (ne : a≠b) : (∀ d, allowed ctx.2.2.2.1.2 d → testPair ctx a b d=true) ∨
+      (∀ d, allowed ctx.2.2.2.1.2 d → testPair ctx b a d=true) := by
+  induction ws with
+  | nil => simp at ha
+  | cons w ws ih =>
+    simp only [testAll,Bool.and_eq_true,testRow,List.all_eq_true] at h
+    rcases List.mem_cons.mp ha with rfl | haTail
+    · have bm := (List.mem_cons.mp hb).resolve_left (Ne.symm ne)
+      exact Or.inl fun d hd => h.1 b bm d (opsOf_mem hd)
+    · rcases List.mem_cons.mp hb with rfl | hbTail
+      · exact Or.inr fun d hd => h.1 a haTail d (opsOf_mem hd)
+      · exact ih h.2 haTail hbTail
+theorem testPair_at {ctx a b d} (h : testPair ctx a b d = true) (ka kb : Bool) :
+    evalMove ctx d a b (dbin d a b) ka kb = true := by
+  simp only [testPair,Bool.and_eq_true] at h
+  cases ka <;> cases kb <;> first | exact h.1.1.1 | exact h.1.2 | exact h.1.1.2 | exact h.2
+theorem keep_mem {v : List Sig} {w : Sig} (a : Sig) (k : Bool) :
+    w ∈ kept k a v ↔ (w=a ∧ k=true) ∨ w∈v := by cases k <;> simp [kept]
+theorem mem_delone {v : List Decor} (nd : v.Nodup) (a w : Decor) (k : Bool) :
+    w ∈ delOne v a k ↔ w∈v ∧ (w≠a ∨ k=true) := by
+  cases k <;> simp [delOne,nd.mem_erase_iff,and_comm]
+theorem unique_value {ws : List Decor} (nd : (ws.map Prod.fst).Nodup) {a b : Decor}
+    (ha : a∈ws) (hb : b∈ws) (eq : a.1=b.1) : a=b := by
+  induction ws with
+  | nil => simp at ha
+  | cons w ws ih =>
+    obtain ⟨hn,ht⟩ := List.nodup_cons.mp nd
+    rcases List.mem_cons.mp ha with rfl | haTail <;> rcases List.mem_cons.mp hb with rfl | hbTail
+    · rfl
+    · exact False.elim (hn (eq ▸ List.mem_map_of_mem hbTail))
+    · exact False.elim (hn (eq.symm ▸ List.mem_map_of_mem haTail))
+    · exact ih ht haTail hbTail
+theorem kept_value {ws : List Decor} (nd : (ws.map Prod.fst).Nodup) {a b : Decor}
+    (ha : a ∈ ws) (hb : b ∈ ws) (ka kb : Bool) (v : Sig) :
+    v ∈ (delTwo ws a b ka kb).map Prod.fst ↔
+    v ∈ ws.map Prod.fst ∧ (v≠a.1 ∨ ka=true) ∧ (v≠b.1 ∨ kb=true) := by
+  have wn := nd.of_map
+  have dn := wn.sublist (delOne_sub ws a ka)
+  simp only [delTwo,List.mem_map,mem_delone wn,mem_delone dn]
+  constructor
+  · rintro ⟨w,hw,rfl⟩
+    exact ⟨⟨_,hw.1.1,rfl⟩,hw.1.2.imp (fun ne eq => ne (unique_value nd hw.1.1 ha eq)) id,
+          hw.2.imp (fun ne eq => ne (unique_value nd hw.1.1 hb eq)) id⟩
+  · rintro ⟨⟨w,hm,rfl⟩,h1,h2⟩
+    exact ⟨w,⟨⟨hm,h1.imp (fun ne eq => ne (congrArg Prod.fst eq)) id⟩,
+        h2.imp (fun ne eq => ne (congrArg Prod.fst eq)) id⟩,rfl⟩
+theorem binary_front {ws : List Decor} (nd : (ws.map Prod.fst).Nodup) {a b : Decor}
+    (ha : a∈ws) (hb : b∈ws) (ne : a.1≠b.1) (d : Nat) (ka kb : Bool) :
+    (moveFront ws d a b ka kb).toFinset =
+      (childTwo (ws.map Prod.fst) a.1 b.1 d ka kb).toFinset := by
+  ext v
+  have av := List.mem_map_of_mem (f:=Prod.fst) ha
+  have bv' := List.mem_map_of_mem (f:=Prod.fst) hb
+  simp only [moveFront,childTwo,List.toFinset_cons,Finset.mem_insert,List.mem_toFinset,
+    kept_value nd ha hb,keep_mem,(nd.erase _).mem_erase_iff,nd.mem_erase_iff,dbin]
+  by_cases va : v=a.1 <;> by_cases vb : v=b.1 <;> cases ka <;> cases kb <;> simp_all
+theorem childTwo_swap {u} (v : List Sig) (nd : v.Nodup) (a b : Sig) (d : Nat) (hd : allowed u d) (ka kb : Bool) :
+    (childTwo v a b d ka kb).toFinset = (childTwo v b a (flipOp d) kb ka).toFinset := by
+  ext x
+  simp only [childTwo,List.toFinset_cons,Finset.mem_insert,List.mem_toFinset,
+    keep_mem,(nd.erase _).mem_erase_iff,nd.mem_erase_iff,bin_flip hd a b]
+  tauto
+theorem node_sound {u raw T r s ws pools links cap}
+    (pairs : properPairs T r s) (faith : ∀ w ∈ ws, faithful r s w)
+    (nd : (ws.map Prod.fst).Nodup) (out : T ∉ ws.map Prod.fst)
+    (pv : ∀ p ∈ pools, ValidPool u raw T p)
+    (lv : ∀ tag xs, xs ∈ links tag → Impossible u T (cap-1) (List.toFinset xs))
+    (checks : testAll (cap,ws.length,ws,preCov u ws,pools,links) ws = true) :
+    Impossible u T cap (ws.map Prod.fst).toFinset := by
+  by_cases hc : cap=0
+  · intro k hk h
+    have ke : k=0 := by omega
+    subst k
+    generalize he : (ws.map Prod.fst).toFinset = S at h
+    obtain ⟨hS,_⟩ := h
+    exact out (List.mem_toFinset.mp (by rw [he,hS]; exact Finset.mem_singleton_self _))
+  have hc' : 0<cap := by omega
+  apply enum_step nd out
+  intro a ha b hb d hd ka kb ne fresh pro len
+  obtain ⟨a,haW,rfl⟩ := List.mem_map.mp ha
+  obtain ⟨b,hbW,rfl⟩ := List.mem_map.mp hb
+  have ab : a≠b := fun e => ne (congrArg Prod.fst e)
+  have one (a b : Decor) (d : Nat) (aa : a∈ws) (bb : b∈ws) (ne' : a.1≠b.1) (ka kb : Bool)
+      (pr : proper (bin d a.1 b.1)) (fr : bin d a.1 b.1 ∉ ws.map Prod.fst)
+      (test : testPair (cap,ws.length,ws,preCov u ws,pools,links) a b d = true) :
+      Impossible u T (cap-1) (childTwo (ws.map Prod.fst) a.1 b.1 d ka kb).toFinset := by
+    rw [←binary_front nd aa bb ne']
+    exact evalMove_sound pairs faith nd aa bb (fun e => ne' (congrArg Prod.fst e)) hc' pv lv
+      pr fr (testPair_at test ka kb)
+  rcases all_binary checks haW hbW ab with hh | hh
+  · exact one a b d haW hbW ne ka kb pro fresh (hh d hd)
+  · rw [childTwo_swap _ nd _ _ d hd]
+    exact one b a (flipOp d) hbW haW (Ne.symm ne) kb ka (bin_flip hd a.1 b.1 ▸ pro)
+      (bin_flip hd a.1 b.1 ▸ fresh) (hh _ (flip_flip hd).1)
+theorem agree_inputs (r s : Row) (h : ∀ a ∈ inputs, bit r a = bit s a) : r=s := by
+  apply Fin.ext
+  apply Nat.eq_of_testBit_eq
+  intro j
+  by_cases hj : j<9
+  · let i : Fin 9 := ⟨j,hj⟩
+    have hm : inputs.getD i.val zero ∈ inputs := by
+      rw [← input_list]
+      exact List.mem_ofFn.mpr ⟨i,rfl⟩
+    exact (input_coords i r).symm.trans ((h _ hm).trans (input_coords i s))
+  · have le : 512 ≤ 2^j := by
+      change 2^9 ≤ 2^j
+      exact Nat.pow_le_pow_right (by decide) (by omega)
+    exact (Nat.testBit_eq_false_of_lt (lt_of_lt_of_le r.isLt le)).trans
+      (Nat.testBit_eq_false_of_lt (lt_of_lt_of_le s.isLt le)).symm
+def composedOK (p q : List Move) := inputs.all (fun a => movedWord p (movedWord q a) == a)
+theorem composed_id {p q} (h : composedOK p q = true) (r : Row) :
+    movedRow q (movedRow p r) = r := by
+  apply agree_inputs
+  intro a ha
+  rw [←bit_moved,←bit_moved]
+  have eq := beq_iff_eq.mp (List.all_eq_true.mp h a ha)
+  rw [eq]
+def autoOK (T : Sig) (p : List Move) :=
+  (movedWord p T == T) && composedOK p p.reverse && composedOK p.reverse p
+theorem rotate_excluded {u T n} {ws : List Sig} (hi : Impossible u T n ws.toFinset)
+    (p : List Move) (ok : autoOK T p = true) : Impossible u T n (ws.map (movedWord p.reverse)).toFinset := by
+  simp only [autoOK,Bool.and_eq_true,beq_iff_eq] at ok
+  have onto : Function.Surjective (movedRow p) := fun r => ⟨movedRow p.reverse r,composed_id ok.2 r⟩
+  intro k hk h
+  have run := live_rename h (movedRow p) onto
+  have goal : rename (movedRow p) T = T := (moved_eq_rename p T).symm.trans ok.1.1
+  have inv (x : Sig) : rename (movedRow p) (movedWord p.reverse x) = x := by
+    apply BitVec.eq_of_getLsbD_eq
+    intro j hj
+    change bit ⟨j,hj⟩ _ = bit ⟨j,hj⟩ _
+    rw [bit_rename,bit_moved,composed_id ok.1.2]
+  have back : (ws.map (movedWord p.reverse)).toFinset.image (rename (movedRow p)) = ws.toFinset := by
+    ext a
+    simp only [Finset.mem_image,List.mem_toFinset,List.mem_map]
+    constructor
+    · rintro ⟨v,⟨w,hw,rfl⟩,rfl⟩
+      simpa only [inv] using hw
+    · intro ha
+      exact ⟨_,⟨a,ha,rfl⟩,inv a⟩
+  rw [goal,back] at run
+  exact hi k hk run
+abbrev Packing := Nat × Nat × Nat × Nat × Nat × Nat × Nat × (Nat → Nat)
+def emptyPacking : Packing := (0,0,0,0,0,0,0,fun _ => 0)
+def packedAt (word : Nat → Nat) (pos len : Nat) :=
+  let i := pos/8192
+  let shift := pos % 8192
+  let lo := word i >>> shift
+  if shift+len ≤ 8192 then lo &&& ((1 <<< len)-1)
+  else (lo ||| (word (i+1) <<< (8192-shift))) &&& ((1 <<< len)-1)
+def lookupWord (nb slots sw vw iw pw : Nat) (data : Nat → Nat) (h : Nat) : Option (Nat × Nat) :=
+  let a := h % nb
+  let sh := packedAt data (a*sw) sw
+  let row := (h/nb+sh) % slots
+  let word := packedAt data (nb*sw+row*vw) vw
+  if (word >>> (iw+pw)) == h/(nb*slots) % 16 then
+    some (word &&& ((1 <<< iw)-1),(word >>> iw) &&& ((1 <<< pw)-1))
+  else none
+def lookupShort (nb slots sw vw iw pw : Nat) (data : Nat → Nat) (h : Nat) : Option (Nat × Nat) :=
+  let a := h % nb
+  let sh := packedAt data (a*sw) sw
+  let row := (h/nb+sh) % slots
+  let word := packedAt data (nb*sw+row*vw) vw
+  if (word >>> (iw+pw)) == h/(nb*slots) % 4 then
+    some (word &&& ((1 <<< iw)-1),(word >>> iw) &&& ((1 <<< pw)-1))
+  else none
+abbrev Forest := Nat × Nat × (Nat → Bits × Bits) × List ColumnInfo × List (List Nat) ×
+  (Nat → Packing) × (Nat → Nat → Option (Nat × Nat))
+def Forest.mask (g : Forest) : Nat := g.1
+def Forest.mode (g : Forest) : Bool := !(g.1.testBit 10)
+def Forest.cap (g : Forest) : Nat := g.2.1
+def Forest.samples (g : Forest) : Nat → Bits × Bits := g.2.2.1
+def Forest.cols (g : Forest) : List ColumnInfo := g.2.2.2.1
+def Forest.autos (g : Forest) : List (List Nat) := g.2.2.2.2.1
+def Forest.levels (g : Forest) : Nat → Packing := g.2.2.2.2.2.1
+def Forest.index (g : Forest) : Nat → Nat → Option (Nat × Nat) := g.2.2.2.2.2.2
+def wiresOf (g : Forest) :=
+  let ws := rawDecor g.mask (fun j => (g.samples j).1) (fun j => (g.samples j).2)
+  ws
+theorem wires_faithful (g : Forest) : ∀ a ∈ wiresOf g,
+    faithful (asRow fun j => (g.samples j).1) (asRow fun j => (g.samples j).2) a := by
+  exact raw_faithful g.mask (fun j => (g.samples j).1) (fun j => (g.samples j).2)
+def targetOf (g : Forest) := chartGoal g.mask
+def chartSamples (m : Nat) (v : Nat → Bits) :=
+  liftGoal m v
+theorem chart_bit (m : Nat) (v : Nat → Bits) (i : Fin 152) :
+    bit (asRow v i) (chartGoal m) = (chartSamples m v).getLsbD i.val := by
+  exact bit_liftGoal m v i
+theorem chart_pairs {m : Nat} {p q : Nat → Bits}
+    (hp : chartSamples m p = BitVec.allOnes 152) (hq : chartSamples m q = 0) :
+    properPairs (chartGoal m) (asRow p) (asRow q) := by
+  intro i
+  simp only [chart_bit,hp,hq,BitVec.getLsbD_allOnes,i.isLt,decide_true,BitVec.getLsbD_zero]
+  simp
+def selectLive {α : Type} (bits : Nat) : List α → List α
+  | [] => []
+  | w::ws => if bits &&& 1 == 1 then w::selectLive (bits >>> 1) ws else selectLive (bits >>> 1) ws
+theorem selectLive_sub {α : Type} (bits : Nat) (ws : List α) : (selectLive bits ws).Sublist ws := by
+  induction ws generalizing bits with
+  | nil => exact List.Sublist.slnil
+  | cons a ws ih =>
+    unfold selectLive
+    split
+    · exact List.Sublist.cons₂ _ (ih _)
+    · exact List.Sublist.cons _ (ih _)
+def prefixWidth (d : Nat) := 10*(d-1)
+def denseRowWidth (d flags : Nat) := flags % 16 + (if d=0 then 0 else 10) + flags/16
+def denseRowStart (d raw dict : Nat) :=
+  (dict % 65536)*prefixWidth d + (dict/65536)*(raw+d)
+def forestRecord (tab : Packing) (raw i : Nat) : Nat :=
+  let (_,d,_,dict,flags,_,marker,word) := tab
+  let width := 10*d+raw+d
+  if marker<1024 then packedAt word (i*width) width else
+    let off := denseRowStart d raw dict+i*denseRowWidth d flags
+    let pre := packedAt word off (flags % 16)
+    let lastBits := if d=0 then 0 else 10
+    let last := packedAt word (off+flags % 16) lastBits
+    let mask := packedAt word (off+flags % 16+lastBits) (flags/16)
+    let base := (dict % 65536)*prefixWidth d
+    packedAt word (pre*prefixWidth d) (prefixWidth d) |||
+      (last <<< prefixWidth d) ||| (packedAt word (base+mask*(raw+d)) (raw+d) <<< (10*d))
+def storedDepth (_g : Forest) (depth : Nat) := depth
+def readNode (g : Forest) (k i : Nat) : Nat × List Decor × List Decor :=
+  let raw := wiresOf g
+  let (_,depth,_,_,_,_,_,data) := g.levels k
+  let len := 10*storedDepth g depth
+  let width := len+raw.length+depth
+  let recp := forestRecord (g.levels k) raw.length i
+  let stored := recp &&& ((1 <<< len)-1)
+  let ops := stored
+  let bank := decodeBank depth ops raw
+  (ops,bank,selectLive (recp >>> len) bank)
+def getFieldV (x pos width : Nat) := (x >>> pos) &&& ((1 <<< width)-1)
+def chosenSteps (bank : List Decor) (ops paid : Nat) : Nat → List Choice
+  | 0 => []
+  | n+1 =>
+    let more := chosenSteps bank (ops >>> 10) (paid >>> 1) n
+    if paid &&& 1 == 0 then more else
+      (getFieldV ops 8 2,(bank.getD (ops &&& 15) defaultDecor).1,
+        (bank.getD (getFieldV ops 4 4) defaultDecor).1) :: more
+def buildRule (g : Forest) (ops d : Nat) (bank : List Decor) (idx paid : Nat) : Option BoundPool :=
+  (g.cols[idx]?).bind fun ci =>
+    materialize g.mode (varsX (rawMask g.mask ci)) (chosenSteps bank ops paid d) (subcube ci.1 ci.2.1) ci.2.2.2.2
+theorem buildRule_sound (g : Forest)
+    (cols : ∀ ci ∈ g.cols, Slice g.mode (varsX (rawMask g.mask ci)) (targetOf g) (subcube ci.1 ci.2.1) ci.2.2.2.2)
+    {i ops depth bank paid c} (h : buildRule g ops depth bank i paid = some c) :
+    ValidPool g.mode (vars g.mask) (targetOf g) c := by
+  unfold buildRule at h
+  cases e : g.cols[i]? with
+  | none => simp [e] at h
+  | some ci =>
+    simp only [e,Option.bind_some] at h
+    apply materialize_sound _ h
+    exact cols ci (List.mem_of_getElem? e)
+def getPairs (data : Nat → Nat) (w v : Nat) : Nat → Nat → List (Nat × Nat)
+  | 0,_ => []
+  | n+1,pos =>
+    let x := packedAt data pos (w+v)
+    (x &&& ((1 <<< w)-1),x >>> w) :: getPairs data w v n (pos+w+v)
+def forceDatum {α : Type} : Nat → (Nat → α) → α
+  | 0, next => next 0
+  | n+1, next => next (n+1)
+def readSortedHints (data : Nat → Nat) (dict cw d gapBits : Nat) :
+    Nat → Nat → Nat → List (Nat × Nat)
+  | 0,_,_ => []
+  | left+1,st,first =>
+    forceDatum st fun pos => forceDatum first fun base =>
+    forceDatum (packedAt data pos 32) fun head =>
+    forceDatum (Nat.log2 (head ^^^ (head+1))) fun ones =>
+    forceDatum (base+(ones <<< gapBits)+packedAt data (pos+ones+1) gapBits) fun key =>
+    forceDatum (packedAt data (dict+key*(cw+d)) (cw+d)) fun pair =>
+      (pair &&& ((1 <<< cw)-1),pair >>> cw) ::
+        readSortedHints data dict cw d gapBits left (pos+ones+1+gapBits) (key+1)
+def promoteHints {α : Type} (a b : Nat) (xs : List α) : List α :=
+  let rec collect : List α → Nat → List α → List α → List α → List α
+    | [],_,first,second,other => first ++ second ++ other.reverse
+    | x::tail,i,first,second,other =>
+      if i=a then collect tail (i+1) [x] second other
+      else if i=b then collect tail (i+1) first [x] other
+      else collect tail (i+1) first second (x::other)
+  collect xs 0 [] [] []
+def forestHints (tab : Packing) (raw i : Nat) : List (Nat × Nat) :=
+  let (num,d,cw,dict,flags,ow,marker,data) := tab
+  if marker<1024 then
+    let start := num*(10*d+raw+d)
+    let pos := start+num*ow+packedAt data (start+i*ow) ow
+    getPairs data cw d (packedAt data pos 6) (pos+6+marker)
+  else
+    let off := denseRowStart d raw dict + num*denseRowWidth d flags
+    let pairs := off+num*ow
+    let priority := decide (4096≤marker)
+    let pos := pairs+(marker-(if priority then 4096 else 1024))*(cw+d)+packedAt data (off+i*ow) ow
+    let n := packedAt data pos 5
+    let gap := packedAt data (pos+5) 3
+    if !priority || decide (n≤1) then readSortedHints data pairs cw d gap n (pos+8) 0 else
+      let width := (n-1).log2+1
+      let a := packedAt data (pos+8) width
+      let b := if n=2 then 1-a else packedAt data (pos+8+width) width
+      let extra := if n=2 then width else 2*width
+      let xs := readSortedHints data pairs cw d gap n (pos+8+extra) 0
+      promoteHints a b xs
+def stateSet (g : Forest) (k i : Nat) := (readNode g k i).2.2.map Prod.fst
+def linkedSet (g : Forest) (k : Nat) (pair : Nat × Nat) : Option (List Sig) :=
+  if pair.1 ≥ (g.levels k).1 then none else
+    (g.autos[pair.2]?).map fun perm => (stateSet g k pair.1).map (movedWord (perm.map swapRows).reverse)
+theorem linkedSet_sound (g : Forest) (k : Nat)
+    (names : ∀ x ∈ g.autos, autoOK (targetOf g) (x.map swapRows) = true)
+    (earlier : ∀ i < (g.levels k).1, Impossible g.mode (targetOf g) k (stateSet g k i).toFinset)
+    {pair out} (h : linkedSet g k pair = some out) :
+    Impossible g.mode (targetOf g) k out.toFinset := by
+  unfold linkedSet at h
+  split at h
+  · contradiction
+  next valid =>
+    cases e : g.autos[pair.2]? with
+    | none => simp [e] at h
+    | some perm =>
+      simp only [e,Option.map_some,Option.some.injEq] at h
+      subst out
+      exact rotate_excluded (earlier _ (by omega)) _ (names _ (List.mem_of_getElem? e))
+def nodeVerified (g : Forest) (k i : Nat) :=
+  let raw := wiresOf g
+  let (num,depth,cw,iw,pw,offw,lw,data) := g.levels k
+  let (ops,bank,ws) := readNode g k i
+  let values := ws.map Prod.fst
+  let rules := (forestHints (g.levels k) raw.length i).filterMap (fun (a,b) => buildRule g ops depth bank a b)
+  let ls := fun tag => ((g.index k tag).bind (linkedSet g (k-1))).toList
+  decide values.Nodup && !(values.contains (targetOf g)) &&
+    (if k=0 then true else testAll (k,ws.length,ws,preCov g.mode ws,rules,ls) ws)
+theorem nodeVerified_sound (g : Forest) (k i : Nat)
+    (samples : properPairs (targetOf g) (asRow fun j => (g.samples j).1) (asRow fun j => (g.samples j).2))
+    (cols : ∀ ci ∈ g.cols, Slice g.mode (varsX (rawMask g.mask ci)) (targetOf g) (subcube ci.1 ci.2.1) ci.2.2.2.2)
+    (names : ∀ x ∈ g.autos, autoOK (targetOf g) (x.map swapRows) = true)
+    (prior : k>0 → ∀ j < (g.levels (k-1)).1, Impossible g.mode (targetOf g) (k-1) (stateSet g (k-1) j).toFinset)
+    (checked : nodeVerified g k i = true) : Impossible g.mode (targetOf g) k (stateSet g k i).toFinset := by
+  simp only [nodeVerified,Bool.and_eq_true,decide_eq_true_eq,Bool.not_eq_true',List.contains_eq_mem] at checked
+  have hN := checked.1.1
+  have hT : targetOf g ∉ stateSet g k i := by simpa [stateSet] using checked.1.2
+  by_cases h0 : k=0
+  · subst k
+    intro t lo h
+    have ht : t=0 := by omega
+    subst t
+    generalize he : (stateSet g 0 i).toFinset = S at h
+    obtain ⟨hS,_⟩ := h
+    exact hT (List.mem_toFinset.mp (by rw [he,hS]; exact Finset.mem_singleton_self _))
+  apply node_sound (raw:=vars g.mask) samples _ hN hT _ _ (by simpa only [h0,if_false] using checked.2)
+  · intro v hv
+    apply decode_faithful _ _ _ _ _ (wires_faithful g) v
+    exact (selectLive_sub _ _).subset hv
+  · intro p hp
+    obtain ⟨⟨a,b⟩,_,h⟩ := List.mem_filterMap.mp hp
+    exact buildRule_sound g cols h
+  · intro tag xs hx
+    have e : ((g.index k tag).bind (linkedSet g (k-1)))=some xs := by simpa using hx
+    obtain ⟨pair,_,h⟩ := Option.bind_eq_some_iff.mp e
+    exact linkedSet_sound g _ names (prior (by omega)) h
+def block (g : Forest) (k start : Nat) : Nat → Bool
+  | 0 => true
+  | n+1 => nodeVerified g k (start+n) && block g k start n
+theorem block_at {g k start n} (h : block g k start n=true) (j : Nat) (lo : start≤j) (hi : j<start+n) :
+    nodeVerified g k j=true := by
+  induction n with
+  | zero => omega
+  | succ n ih =>
+    simp only [block,Bool.and_eq_true] at h
+    by_cases eq : j=start+n
+    · simpa [eq] using h.1
+    · exact ih h.2 (by omega)
+theorem block_merge {g k start a b} (h : block g k start a=true)
+    (h' : block g k (start+a) b=true) : block g k start (a+b)=true := by
+  induction b with
+  | zero => simpa using h
+  | succ b ih =>
+    simp only [block,Bool.and_eq_true] at h'
+    simp only [Nat.add_succ,block,Bool.and_eq_true]
+    exact ⟨by simpa [Nat.add_assoc] using h'.1,ih h'.2⟩
+def checkedTables (g : Forest) (top : Nat) :=
+  ∀ k ≤ top, block g k 0 (g.levels k).1 = true
+def graphValid (g : Forest) (prior : Nat → Nat) :=
+  (chartSamples g.mask (fun j => (g.samples j).1) == BitVec.allOnes 152) &&
+  (chartSamples g.mask (fun j => (g.samples j).2) == 0) &&
+  g.cols.all (fun c => colCheck g.mask c prior) &&
+  g.autos.all (fun p => autoOK (targetOf g) (p.map swapRows))
+theorem forest_all (g : Forest) (top : Nat) (prior : Nat → Nat)
+    (lower : ∀ q, Lower g.mode (varsX q) (qG_ q) (prior q))
+    (geometry : graphValid g prior = true) (rows : checkedTables g top) :
+    ∀ k ≤ top, ∀ i < (g.levels k).1, Impossible g.mode (targetOf g) k (stateSet g k i).toFinset := by
+  simp only [graphValid,Bool.and_eq_true,List.all_eq_true,beq_iff_eq] at geometry
+  intro k
+  induction k with
+  | zero =>
+    intro hk i hi
+    apply nodeVerified_sound g 0 i (chart_pairs geometry.1.1.1 geometry.1.1.2)
+      (fun x hx => col_sound _ prior lower (geometry.1.2 x hx)) geometry.2 (by omega)
+    exact block_at (rows 0 hk) i (by omega) (by omega)
+  | succ k ih =>
+    intro hk i hi
+    apply nodeVerified_sound g _ i (chart_pairs geometry.1.1.1 geometry.1.1.2)
+      (fun x hx => col_sound _ prior lower (geometry.1.2 x hx)) geometry.2
+      (fun _ => by simpa using ih (by omega))
+    exact block_at (rows _ hk) i (by omega) (by omega)
+def indexedRoot (g : Forest) (k i : Nat) (ws : List Sig) :=
+  decide (i < (g.levels k).1) && sameWords (stateSet g k i) ws
+theorem root_index {g top prior k i ws} (low : ∀ q, Lower g.mode (varsX q) (qG_ q) (prior q))
+    (geom : graphValid g prior = true) (blocks : checkedTables g top) (le : k ≤ top)
+    (idx : indexedRoot g k i ws = true) : Impossible g.mode (targetOf g) k ws.toFinset := by
+  simp only [indexedRoot,Bool.and_eq_true,decide_eq_true_eq] at idx
+  rw [←sameWords_sound idx.2]
+  exact forest_all g top prior low geom blocks _ le i idx.1
+theorem lower_forest {g prior i hints} (low : ∀ q, Lower g.mode (varsX q) (qG_ q) (prior q))
+    (geom : graphValid g prior = true) (blocks : checkedTables g g.cap)
+    (idx : indexedRoot g g.cap i (vars g.mask) = true) (hp : properB (targetOf g) = true)
+    (ess : checkEssential (targetOf g) (vars g.mask) (graphPairs g.mask hints) = true)
+    (all : (graphPairs g.mask hints).map Prod.fst = vars g.mask) :
+    Lower g.mode (vars g.mask) (targetOf g) (g.cap+1) := by
+  apply lower_impossible (qP_ _ hp) (essential_plain ess).1 (essential_plain ess).2 _ (root_index low geom blocks (Nat.le_refl _) idx)
+  intro a ha
+  apply essential_ok ess a
+  rw [all]
+  exact List.mem_toFinset.mpr ha
+def Known (u : Bool) (entries : List (Nat × Nat)) := ∀ e ∈ entries, Lower u (varsX e.1) (qG_ e.1) e.2
+def extendKnown (old : List (Nat × Nat)) (L : Nat) (carries : List (Nat × List Nat)) :=
+  carries.map (fun v => (v.1,L)) ++ old
+theorem extend_ok {u old L m carries} (previous : Known u old)
+    (main : Lower u (varsX m) (qG_ m) L)
+    (ok : carries.all (fun v => carryOK v.1 m v.2) = true) :
+    Known u (extendKnown old L carries) := by
+  intro e he
+  rcases List.mem_append.mp he with hx | h
+  · obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hx
+    exact carry_of (List.all_eq_true.mp ok _ hv) main
+  · exact previous e h
+theorem baseKnown : Known true [] := by simp [Known]
+theorem known_down {u es} (h : Known true es) : Known u es := fun e he => lower_down (h e he)
+def lanePlace (v : Nat) (upper : Nat) := 2^153*upper+v
+def combineLanes {α : Type} (f : α → Bits) : List α → Nat
+  | [] => 0
+  | x::xs => lanePlace (f x).toNat (combineLanes f xs)
+def units : Nat → Nat
+  | 0 => 0
+  | n+1 => lanePlace 1 (units n)
+theorem laneSmall (x : Bits) : x.toNat < 2^153 :=
+  lt_trans x.isLt (by decide +kernel)
+theorem place_and (a b : Bits) (u v : Nat) :
+    lanePlace a.toNat u &&& lanePlace b.toNat v = lanePlace (a &&& b).toNat (u &&& v) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [lanePlace,Nat.testBit_and,Nat.testBit_two_pow_mul_add _ (laneSmall _)]
+  by_cases h : i<153 <;> simp only [h,ite_true,ite_false,BitVec.toNat_and,Nat.testBit_and]
+theorem place_or (a b : Bits) (u v : Nat) :
+    lanePlace a.toNat u ||| lanePlace b.toNat v = lanePlace (a ||| b).toNat (u ||| v) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [lanePlace,Nat.testBit_or,Nat.testBit_two_pow_mul_add _ (laneSmall _)]
+  by_cases h : i<153 <;> simp only [h,ite_true,ite_false,BitVec.toNat_or,Nat.testBit_or]
+theorem place_xor (a b : Bits) (u v : Nat) :
+    lanePlace a.toNat u ^^^ lanePlace b.toNat v = lanePlace (a ^^^ b).toNat (u ^^^ v) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  simp only [lanePlace,Nat.testBit_xor,Nat.testBit_two_pow_mul_add _ (laneSmall _)]
+  by_cases h : i<153 <;> simp only [h,ite_true,ite_false,BitVec.toNat_xor,Nat.testBit_xor]
+theorem lanes_and {α} (f g : α → Bits) (xs) :
+    combineLanes f xs &&& combineLanes g xs = combineLanes (fun x => f x &&& g x) xs := by
+  induction xs with
+  | nil => simp [combineLanes]
+  | cons a xs ih => simp only [combineLanes,place_and,ih]
+theorem lanes_or {α} (f g : α → Bits) (xs) :
+    combineLanes f xs ||| combineLanes g xs = combineLanes (fun x => f x ||| g x) xs := by
+  induction xs with
+  | nil => simp [combineLanes]
+  | cons a xs ih => simp only [combineLanes,place_or,ih]
+theorem lanes_xor {α} (f g : α → Bits) (xs) :
+    combineLanes f xs ^^^ combineLanes g xs = combineLanes (fun x => f x ^^^ g x) xs := by
+  induction xs with
+  | nil => simp [combineLanes]
+  | cons a xs ih => simp only [combineLanes,place_xor,ih]
+def fullMarks (r packed : Nat) := ((packed+r) >>> 152) &&& r
+theorem unit_bit (n i : Nat) (hi : i<n) : (units n).testBit (153*i) = true := by
+  induction n generalizing i with
+  | zero => omega
+  | succ n ih =>
+    rw [units,lanePlace,Nat.testBit_two_pow_mul_add _ (by decide +kernel : 1 < 2^153)]
+    cases i with
+    | zero => simp
+    | succ i =>
+      have di : 153*(i+1)-153=153*i := by omega
+      have ge : ¬153*(i+1)<153 := by omega
+      simp only [ge,ite_false,di]
+      exact ih _ (by omega)
+set_option maxRecDepth 8192 in
+theorem guardBit (a : Bits) : (a.toNat+1).testBit 152 = (a==BitVec.allOnes 152) := by
+  by_cases h : a=BitVec.allOnes 152
+  · subst a
+    decide +kernel
+  · have lim := a.isLt
+    have ne : a.toNat ≠ 2^152-1 := by
+      intro eq
+      apply h
+      apply BitVec.eq_of_toNat_eq
+      simpa only [BitVec.toNat_allOnes] using eq
+    have lt : a.toNat+1<2^152 := by omega
+    rw [Nat.testBit_eq_false_of_lt lt]
+    exact (beq_eq_false_iff_ne.mpr h).symm
+set_option maxRecDepth 8192 in
+theorem mark_at {α} (f : α → Bits) (xs : List α) (i : Nat) (hi : i<xs.length) :
+    (fullMarks (units xs.length) (combineLanes f xs)).testBit (153*i) =
+      (f xs[i]==BitVec.allOnes 152) := by
+  simp only [fullMarks,Nat.testBit_and,Nat.testBit_shiftRight,unit_bit _ _ hi,Bool.and_true]
+  induction xs generalizing i with
+  | nil => simp at hi
+  | cons a xs ih =>
+    simp only [combineLanes,List.length_cons,units,lanePlace]
+    have sum (u v x : Nat) : 2^153*u+x+(2^153*v+1)=2^153*(u+v)+(x+1) := by omega
+    rw [sum,Nat.testBit_two_pow_mul_add _ (show (f a).toNat+1<2^153 from by have := (f a).isLt; omega)]
+    have hi' : i < xs.length+1 := hi
+    cases i with
+    | zero => simpa using guardBit (f a)
+    | succ i =>
+      have ge : ¬153*(i+1)+152<153 := by omega
+      have di : 153*(i+1)+152-153=153*i+152 := by omega
+      simp only [ge,ite_false,di,List.getElem_cons_succ]
+      apply ih i (by omega)
+abbrev PackedSig := Nat × Nat
+abbrev PackedCov := Nat × Nat × Nat
+def packedSig {α} (s : α → Signals) (xs : List α) : PackedSig :=
+  (combineLanes (fun x => (s x).1) xs,combineLanes (fun x => (s x).2) xs)
+def packedCov {α} (c : α → Cov) (xs : List α) : PackedCov :=
+  (combineLanes (fun x => (c x).1) xs,combineLanes (fun x => (c x).2.1) xs,
+   combineLanes (fun x => (c x).2.2) xs)
+def packedColumn (d : Bool) (a : PackedSig) :=
+  if d then a.1 ^^^ (a.1 &&& a.2) else a.1 ^^^ a.2
+theorem xor_meet (a b : Bits) : a ^^^ (a &&& b) = a &&& ~~~b := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_xor,BitVec.getLsbD_and,BitVec.getLsbD_not,hi,decide_true,Bool.true_and]
+  cases a.getLsbD i <;> cases b.getLsbD i <;> rfl
+theorem packed_column {α} (s : α → Signals) (xs : List α) (d : Bool) :
+    packedColumn d (packedSig s xs) = combineLanes (fun x => column d (s x)) xs := by
+  cases d <;> simp only [packedColumn,packedSig,column,Bool.false_eq_true,ite_false,ite_true,lanes_and,lanes_xor,xor_meet]
+def packedOp (op : Nat) (a b : PackedSig) : PackedSig :=
+  if op=0 then (a.1 &&& b.1,a.2 &&& b.2) else if op=1 then (a.1 ||| b.1,a.2 ||| b.2)
+  else if op=2 then (a.1 ^^^ (a.1 &&& b.1),a.2 ^^^ (a.2 &&& b.2))
+  else (b.1 ^^^ (b.1 &&& a.1),b.2 ^^^ (b.2 &&& a.2))
+theorem packed_op {α} (a b : α → Decor) (xs : List α) (op : Nat) :
+    packedOp op (packedSig (fun x => (a x).2) xs) (packedSig (fun x => (b x).2) xs) =
+    packedSig (fun x => (dbin op (a x) (b x)).2) xs := by
+  by_cases h0 : op=0
+  · simp only [packedOp,h0,ite_true,packedSig,lanes_and,dbin,bv]
+  by_cases h1 : op=1
+  · simp [packedOp,h1,packedSig,lanes_or,dbin,bv]
+  by_cases h2 : op=2
+  · simp [packedOp,h2,packedSig,lanes_and,lanes_xor,xor_meet,dbin,bv]
+  · have e (x y : Bits) : ~~~x &&& y = y &&& ~~~x := BitVec.and_comm _ _
+    simp only [packedOp,h0,h1,h2,ite_false,packedSig,lanes_and,lanes_xor,xor_meet,dbin,bv,e]
+def takePacked (c : PackedCov) (a b : Nat) (ka kb : Bool) :=
+  let without1 := fun w => c.1 ^^^ (c.1 &&& (c.2.1 &&& w))
+  let without2 := c.1 ^^^ (c.1 &&& ((c.2.1 &&& (a ||| b)) ||| (c.2.2 &&& (a &&& b))))
+  if ka then (if kb then c.1 else without1 b)
+  else if kb then without1 a else without2
+theorem takePacked_ok {α} (c : α → Cov) (a b : α → Bits) (xs : List α) (ka kb : Bool) :
+    takePacked (packedCov c xs) (combineLanes a xs) (combineLanes b xs) ka kb =
+    combineLanes (fun x => restCov (c x) (a x) (b x) ka kb) xs := by
+  cases ka <;> cases kb <;>
+    simp only [takePacked,packedCov,lanes_and,lanes_or,lanes_xor,xor_meet,restCov,takeOne,takeTwo,
+      Bool.false_eq_true,ite_false,ite_true]
+def contextWire (c : NodeContext) (i : Nat) := c.2.2.1.getD i defaultDecor
+def checkAt (c : NodeContext) (i j op : Nat) (ka kb : Bool) :=
+  let a := contextWire c i
+  let b := contextWire c j
+  evalMove c op a b (dbin op a b) ka kb
+def combField (c : NodeContext) (d ka kb : Bool) (op i j : Nat) :=
+  let a := contextWire c i
+  let b := contextWire c j
+  restCov c.2.2.2.1.1 (column d a.2) (column d b.2) ka kb |||
+    column d (dbin op a b).2
+def onMarks {α : Type} (f : α → Bool) (mask : Nat) : List α → Bool
+  | [] => true
+  | x::xs => if mask=0 then true else
+    ((mask &&& 1 == 0) || f x) && onMarks f (mask >>> 153) xs
+theorem marked_ok {α} (f : α → Bool) (mask : Nat) (xs : List α) (i : Nat) (hi : i<xs.length)
+    (bitOn : mask.testBit (153*i)=true) (ok : onMarks f mask xs=true) : f xs[i]=true := by
+  induction xs generalizing mask i with
+  | nil => simp at hi
+  | cons x xs ih =>
+    have ne : mask≠0 := by intro e; simp [e] at bitOn
+    simp only [onMarks,ne,ite_false,Bool.and_eq_true,Bool.or_eq_true,beq_iff_eq] at ok
+    cases i with
+    | zero =>
+      have nonzero : mask &&& 1 ≠ 0 := by
+        intro he
+        have at0 := congrArg (fun n : Nat => n.testBit 0) he
+        simp only [Nat.testBit_and] at at0
+        change mask.testBit 0=true at bitOn
+        simp [bitOn] at at0
+      exact ok.1.resolve_left nonzero
+    | succ i =>
+      apply ih (mask:=mask >>> 153) (i:=i) (by simpa using hi) _ ok.2
+      simpa only [Nat.testBit_shiftRight,Nat.mul_succ,Nat.add_comm] using bitOn
+abbrev Batch := Nat × Nat × Nat × List PackedSig × PackedCov
+def makeBatch (k n : Nat) (xs : List NodeContext) : Batch :=
+  (k,n,units xs.length,(List.range n).map (fun i => packedSig (fun c => (contextWire c i).2) xs),
+    packedCov (fun c => c.2.2.2.1.1) xs)
+def laneWire (b : Batch) (i : Nat) := b.2.2.2.1.getD i (0,0)
+theorem laneWire_at (k n) (xs) {i : Nat} (h : i<n) :
+    laneWire (makeBatch k n xs) i = packedSig (fun c => (contextWire c i).2) xs := by
+  simp [laneWire,makeBatch,List.getD_eq_getElem?_getD,List.getElem?_map,List.getElem?_range,h]
+theorem masked_comp (d x : Sig) : masked d (neg x) = d ^^^ masked d x := by
+  apply bit_ext
+  intro r
+  simp only [masked,neg,bit,BitVec.getLsbD_and,BitVec.getLsbD_not,BitVec.getLsbD_xor,r.isLt,decide_true,Bool.true_and]
+  cases d.getLsbD r.val <;> cases x.getLsbD r.val <;> rfl
+def constantLoss (p : Decor → Bool) (a : Decor) (keep : Bool) :=
+  if keep then 0 else (p a).toNat
+theorem lossBound (p : Decor → Bool) (ws : List Decor) (a : Decor) (keep : Bool) :
+    ws.countP p ≤ (delOne ws a keep).countP p + constantLoss p a keep := by
+  cases keep
+  · simp only [delOne,Bool.false_eq_true,ite_false,constantLoss,List.countP_erase]
+    split
+    next h => simp [h.2]; omega
+    next => omega
+  · simp [delOne,constantLoss]
+theorem keptCount (p : Decor → Bool) (ws : List Decor) (a b : Decor) (ka kb : Bool) :
+    ws.countP p - constantLoss p a ka - constantLoss p b kb ≤
+    (delTwo ws a b ka kb).countP p := by
+  have h1 := lossBound p ws a ka
+  have h2 := lossBound p (delOne ws a ka) b kb
+  simp only [delTwo]
+  omega
+noncomputable def force {β : Type} (n : Nat) (f : Nat → β) : β := Nat.rec (f 0) (fun k _ => f (Nat.succ k)) n
+theorem force_eq {β : Type} (n : Nat) (f : Nat → β) : force n f = f n := by cases n <;> rfl
+noncomputable def forceMap {α β : Type} (f : α → Nat) (l : List α) : (List Nat → β) → β :=
+  List.rec (fun k => k []) (fun a _ ih k => force (f a) fun x => ih fun xs => k (x::xs)) l
+theorem forceMap_eq {α β : Type} (f : α → Nat) (l : List α) (k : List Nat → β) : forceMap f l k = k (l.map f) := by
+  induction l generalizing k with
+  | nil => rfl
+  | cons a l ih =>
+    change force (f a) (fun x => forceMap f l fun xs => k (x::xs)) = _
+    rw [force_eq,ih]
+    rfl
+def nmask (d : Nat) (a : Sig) : Nat := Nat.land a.toNat d
+noncomputable def anyEq (m : Nat) (l : List Nat) : Bool := List.rec false (fun v _ ih => or (Nat.beq m v) ih) l
+def nconst (d m : Nat) : Bool := or (Nat.beq m 0) (Nat.beq m d)
+noncomputable def navail (u : Bool) (d : Nat) (pm : List Nat) (m : Nat) : Bool :=
+  or (or (nconst d m) (anyEq m pm)) (and u (anyEq (Nat.xor d m) pm))
+theorem nmask_eq (d a : Sig) : nmask d.toNat a = (masked d a).toNat := (BitVec.toNat_and _ _).symm
+theorem beq_toNat (a b : Sig) : Nat.beq a.toNat b.toNat = (a==b) := by
+  rw [Bool.eq_iff_iff,Nat.beq_eq,beq_iff_eq]
+  exact BitVec.toNat_inj
+theorem nconst_eq (d a : Sig) : nconst d.toNat (nmask d.toNat a) = isMaskedConstant d a := by
+  rw [nmask_eq]
+  have e : Nat.beq (masked d a).toNat 0 = (masked d a == zero) := by
+    have z0 : zero.toNat=0 := by simp [zero]
+    rw [←beq_toNat,z0]
+  rw [nconst,e,beq_toNat]
+  rfl
+theorem anyEq_eq (x d : Sig) (pool : List Sig) : anyEq x.toNat (pool.map (nmask d.toNat)) = (pool.map (masked d)).any (fun v => v==x) := by
+  induction pool with
+  | nil => rfl
+  | cons a l ih =>
+    change or (Nat.beq x.toNat (nmask d.toNat a)) (anyEq x.toNat (l.map (nmask d.toNat))) = _
+    rw [ih,nmask_eq,beq_toNat,List.map_cons,List.any_cons,Bool.beq_comm]
+theorem navail_eq (u : Bool) (d a : Sig) (pool : List Sig) :
+    navail u d.toNat (pool.map (nmask d.toNat)) (nmask d.toNat a) = availableB u d pool a := by
+  have x : Nat.xor d.toNat (masked d a).toNat = (masked d (neg a)).toNat := by
+    rw [masked_comp]
+    exact (BitVec.toNat_xor _ _).symm
+  rw [navail,nconst_eq,nmask_eq,x,anyEq_eq,anyEq_eq]
+  simp only [availableB,isMaskedConstant]
+def unav (u : Bool) (p : BoundPool) (w : Decor) : Nat := cond (availableB u p.domain p.wires w.1) 0 1
+def slowCost (u : Bool) (p : BoundPool) (ws : List Decor) (k : Nat) (a b : Decor) (op : Nat) (ka kb : Bool) : Bool :=
+  let const := fun w : Decor => isMaskedConstant p.domain w.1
+  let z := bin op a.1 b.1
+  let cm := ws.countP const - constantLoss const a ka - constantLoss const b kb + (isMaskedConstant p.domain z).toNat
+  (((ws.map (unav u p)).sum == cond ka 0 (unav u p a) + cond kb 0 (unav u p b)) &&
+    decide (k+p.paid+(!availableB u p.domain p.wires z).toNat < p.bound+cm)) &&
+    (availableB u p.domain p.wires z || (availableB u p.domain p.wires a.1 && availableB u p.domain p.wires b.1))
+def zN (op x y : Nat) : Nat := cond (Nat.beq op 0) (Nat.land x y) (cond (Nat.beq op 1) (Nat.lor x y)
+  (cond (Nat.beq op 2) (Nat.xor x (Nat.land x y)) (Nat.xor y (Nat.land x y))))
+theorem zN_eq (op : Nat) (d a b : Sig) : zN op (nmask d.toNat a) (nmask d.toNat b) = nmask d.toNat (bin op a b) := by
+  have tn (x y : Sig) : Nat.land x.toNat y.toNat = (x &&& y).toNat := (BitVec.toNat_and x y).symm
+  have tx (x y : Sig) : Nat.xor x.toNat y.toNat = (x ^^^ y).toNat := (BitVec.toNat_xor x y).symm
+  have tor (x y : Sig) : Nat.lor x.toNat y.toNat = (x ||| y).toNat := (BitVec.toNat_or x y).symm
+  simp only [nmask_eq]
+  unfold zN
+  by_cases h0 : op=0
+  · subst h0
+    change Nat.land _ _ = _
+    rw [tn]
+    congr 1
+    apply bit_ext
+    intro r
+    simp only [masked,bin,bit,ite_true,BitVec.getLsbD_and]
+    cases a.getLsbD r.val <;> cases b.getLsbD r.val <;> cases d.getLsbD r.val <;> rfl
+  by_cases h1 : op=1
+  · subst h1
+    change Nat.lor _ _ = _
+    rw [tor]
+    congr 1
+    apply bit_ext
+    intro r
+    simp only [masked,bin,bit,Nat.one_ne_zero,ite_true,ite_false,BitVec.getLsbD_and,BitVec.getLsbD_or]
+    cases a.getLsbD r.val <;> cases b.getLsbD r.val <;> cases d.getLsbD r.val <;> rfl
+  have e0 : Nat.beq op 0=false := Bool.eq_false_iff.mpr (fun h => h0 (Nat.eq_of_beq_eq_true h))
+  have e1 : Nat.beq op 1=false := Bool.eq_false_iff.mpr (fun h => h1 (Nat.eq_of_beq_eq_true h))
+  by_cases h2 : op=2
+  · subst h2
+    change Nat.xor _ (Nat.land _ _) = _
+    rw [tn,tx]
+    congr 1
+    apply bit_ext
+    intro r
+    simp only [masked,bin,bit,OfNat.ofNat_ne_zero,OfNat.ofNat_ne_one,ite_true,ite_false,BitVec.getLsbD_and,BitVec.getLsbD_xor,BitVec.getLsbD_not,r.isLt,decide_true,Bool.true_and]
+    cases a.getLsbD r.val <;> cases b.getLsbD r.val <;> cases d.getLsbD r.val <;> rfl
+  have e2 : Nat.beq op 2=false := Bool.eq_false_iff.mpr (fun h => h2 (Nat.eq_of_beq_eq_true h))
+  rw [e0,e1,e2]
+  change Nat.xor _ (Nat.land _ _) = _
+  rw [tn,tx]
+  congr 1
+  apply bit_ext
+  intro r
+  simp only [masked,bin,bit,h0,h1,h2,ite_false,BitVec.getLsbD_and,BitVec.getLsbD_xor,BitVec.getLsbD_not,r.isLt,decide_true,Bool.true_and]
+  cases a.getLsbD r.val <;> cases b.getLsbD r.val <;> cases d.getLsbD r.val <;> rfl
+def nloss (d x : Nat) (keep : Bool) : Nat := cond keep 0 (cond (nconst d x) 1 0)
+theorem nloss_eq (d : Sig) (a : Decor) (keep : Bool) :
+    nloss d.toNat (nmask d.toNat a.1) keep = constantLoss (fun w : Decor => isMaskedConstant d w.1) a keep := by
+  rw [nloss,nconst_eq,constantLoss]
+  cases keep
+  · cases isMaskedConstant d a.1 <;> rfl
+  · rfl
+abbrev QS := Nat × Nat × Nat × Nat × Nat × List Nat × List Nat × Bool
+noncomputable def quickSpec (u : Bool) (k : Nat) (ws : List Decor) (p : BoundPool) : QS :=
+  let d := p.domain.toNat
+  let ms := ws.map (fun w : Decor => nmask d w.1)
+  (d,ms.countP (nconst d),p.bound,Nat.add k p.paid,(ms.map fun m => cond (navail u d (p.wires.map (nmask d)) m) 0 1).sum,ms,p.wires.map (nmask d),u)
+noncomputable def forceBool {β : Type} (b : Bool) (f : Bool → β) : β := Bool.rec (f false) (f true) b
+noncomputable def forcePool {β : Type} (u : Bool) (k : Nat) (ws : List Decor) (p : BoundPool) (f : QS → β) : β :=
+  force p.domain.toNat fun d => forceMap (nmask d) p.wires fun pm => forceMap (fun w : Decor => nmask d w.1) ws fun ms =>
+  force (ms.countP (nconst d)) fun c => force p.bound fun l => force (Nat.add k p.paid) fun t =>
+  force (ms.map fun m => cond (navail u d pm m) 0 1).sum fun v => forceBool u fun u => f (d,c,l,t,v,ms,pm,u)
+theorem forcePool_eq {β : Type} (u k ws p) (f : QS → β) : forcePool u k ws p f = f (quickSpec u k ws p) := by
+  have e (b : Bool) (f : Bool → β) : forceBool b f = f b := by cases b <;> rfl
+  simp only [forcePool,force_eq,forceMap_eq,e]
+  rfl
+noncomputable def forcePools {β : Type} (u : Bool) (k : Nat) (ws : List Decor) (ps : List BoundPool) : (List QS → β) → β :=
+  List.rec (fun f => f []) (fun p _ ih f => forcePool u k ws p fun q => ih fun qs => f (q::qs)) ps
+theorem forcePools_eq {β : Type} (u k ws ps) (f : List QS → β) : forcePools u k ws ps f = f (ps.map (quickSpec u k ws)) := by
+  induction ps generalizing f with
+  | nil => rfl
+  | cons p ps ih =>
+    change forcePool u k ws p (fun q => forcePools u k ws ps fun qs => f (q::qs)) = _
+    rw [forcePool_eq,ih]
+    rfl
+def kwN (v : Nat) : Nat :=
+  let n := v % 2305843009213693921
+  (n*(n+971)) % 2305843009213693921
+abbrev Lane := NodeContext × Nat × Nat × List QS × List Nat × Nat
+noncomputable def laneOf (c : NodeContext) : Lane :=
+  let ws := c.2.2.1.map (fun w : Decor => w.1.toNat)
+  (c,c.2.2.1.length,cond c.2.2.2.1.2 4 2,c.2.2.2.2.1.map (quickSpec c.2.2.2.1.2 (c.1-1) c.2.2.1),ws,(ws.map kwN).sum)
+noncomputable def forceLanes {β : Type} (cs : List NodeContext) : (List Lane → β) → β :=
+  List.rec (fun f => f []) (fun c _ ih f => force c.2.2.1.length fun n => force (cond c.2.2.2.1.2 4 2) fun l =>
+    forceMap (fun w : Decor => w.1.toNat) c.2.2.1 fun ws => force (ws.map kwN).sum fun t =>
+    forcePools c.2.2.2.1.2 (c.1-1) c.2.2.1 c.2.2.2.2.1 fun qs => ih fun ys => f ((c,n,l,qs,ws,t)::ys)) cs
+theorem forceLanes_eq {β : Type} (cs) (f : List Lane → β) : forceLanes cs f = f (cs.map laneOf) := by
+  induction cs generalizing f with
+  | nil => rfl
+  | cons c cs ih =>
+    change force c.2.2.1.length (fun n => force (cond c.2.2.2.1.2 4 2) fun l =>
+      forceMap (fun w : Decor => w.1.toNat) c.2.2.1 fun ws => force (ws.map kwN).sum fun t =>
+      forcePools c.2.2.2.1.2 (c.1-1) c.2.2.1 c.2.2.2.2.1 fun qs => forceLanes cs fun ys => f ((c,n,l,qs,ws,t)::ys)) = _
+    rw [force_eq,force_eq,forceMap_eq,force_eq,forcePools_eq,ih]
+    rfl
+noncomputable def fastCost (s : QS) (i j op : Nat) (ka kb : Bool) : Bool :=
+  force (s.2.2.2.2.2.1.getD i 0) fun x => force (s.2.2.2.2.2.1.getD j 0) fun y =>
+  let av := navail s.2.2.2.2.2.2.2 s.1 s.2.2.2.2.2.2.1
+  let hi := Nat.add s.2.2.1 (Nat.sub (Nat.sub s.2.1 (nloss s.1 x ka)) (nloss s.1 y kb))
+  let lo := s.2.2.2.1
+  and (Nat.beq s.2.2.2.2.1 (Nat.add (cond ka 0 (cond (av x) 0 1)) (cond kb 0 (cond (av y) 0 1))))
+  (cond (Nat.ble (Nat.succ lo) hi)
+    (force (zN op x y) fun z => or (av z) (and (Nat.ble (Nat.add lo 2) hi) (and (av x) (av y))))
+    (cond (Nat.ble lo hi) (nconst s.1 (zN op x y)) false))
+theorem spec_get {d : Nat} (ws : List Decor) (i : Nat) (hd : nmask d zero=0) :
+    (ws.map (fun w : Decor => nmask d w.1)).getD i 0 = nmask d (ws.getD i defaultDecor).1 := by
+  simp only [List.getD_eq_getElem?_getD,List.getElem?_map]
+  cases ws[i]? with
+  | none => exact hd.symm
+  | some v => rfl
+theorem fast_slow {u k p ws i j op ka kb} (h : fastCost (quickSpec u k ws p) i j op ka kb=true) :
+    slowCost u p ws k (ws.getD i defaultDecor) (ws.getD j defaultDecor) op ka kb=true := by
+  have z0 : nmask p.domain.toNat zero=0 := by
+    have : zero.toNat=0 := by simp [zero]
+    simp [nmask,this]
+  have su : (((ws.map (fun w : Decor => nmask p.domain.toNat w.1)).map fun m => cond (navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat)) m) 0 1).sum) =
+      (ws.map (unav u p)).sum := by
+    rw [List.map_map]
+    refine congrArg List.sum (List.map_congr_left ?_)
+    intro w _
+    change cond (navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat)) (nmask p.domain.toNat w.1)) 0 1 = _
+    rw [navail_eq]
+    rfl
+  simp only [fastCost,quickSpec,force_eq,spec_get _ _ z0,su,List.countP_map,Function.comp_def,nconst_eq] at h
+  generalize ws.getD i defaultDecor=a at h ⊢
+  generalize ws.getD j defaultDecor=b at h ⊢
+  replace h : and (Nat.beq (ws.map (unav u p)).sum (Nat.add (cond ka 0 (cond ((navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat))) (nmask p.domain.toNat a.1)) 0 1)) (cond kb 0 (cond ((navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat))) (nmask p.domain.toNat b.1)) 0 1))))
+   (cond (Nat.ble (Nat.succ (Nat.add k p.paid)) (Nat.add p.bound (Nat.sub (Nat.sub (ws.countP (fun w : Decor => isMaskedConstant p.domain w.1)) (nloss p.domain.toNat (nmask p.domain.toNat a.1) ka)) (nloss p.domain.toNat (nmask p.domain.toNat b.1) kb))))
+    (or ((navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat))) (zN op (nmask p.domain.toNat a.1) (nmask p.domain.toNat b.1))) (and (Nat.ble (Nat.add (Nat.add k p.paid) 2) (Nat.add p.bound (Nat.sub (Nat.sub (ws.countP (fun w : Decor => isMaskedConstant p.domain w.1)) (nloss p.domain.toNat (nmask p.domain.toNat a.1) ka)) (nloss p.domain.toNat (nmask p.domain.toNat b.1) kb)))) (and ((navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat))) (nmask p.domain.toNat a.1)) ((navail u p.domain.toNat (p.wires.map (nmask p.domain.toNat))) (nmask p.domain.toNat b.1)))))
+    (cond (Nat.ble (Nat.add k p.paid) (Nat.add p.bound (Nat.sub (Nat.sub (ws.countP (fun w : Decor => isMaskedConstant p.domain w.1)) (nloss p.domain.toNat (nmask p.domain.toNat a.1) ka)) (nloss p.domain.toNat (nmask p.domain.toNat b.1) kb)))) (nconst p.domain.toNat (zN op (nmask p.domain.toNat a.1) (nmask p.domain.toNat b.1))) false)) = true := h
+  rw [zN_eq,nconst_eq,navail_eq,navail_eq,navail_eq,nloss_eq,nloss_eq] at h
+  have ca : isMaskedConstant p.domain (bin op a.1 b.1)=true → availableB u p.domain p.wires (bin op a.1 b.1)=true := by
+    intro zc
+    simp only [availableB,isMaskedConstant,Bool.or_eq_true] at zc ⊢
+    exact Or.inl (Or.inl zc)
+  simp only [Nat.add_eq,Nat.sub_eq,Nat.succ_eq_add_one,Bool.and_eq_true,Nat.beq_eq] at h
+  obtain ⟨hu,h⟩ := h
+  simp only [slowCost,Bool.and_eq_true,beq_iff_eq,decide_eq_true_eq]
+  refine ⟨⟨hu,?_⟩,?_⟩
+  all_goals
+    generalize ws.countP (fun w => isMaskedConstant p.domain w.1) - constantLoss (fun w : Decor => isMaskedConstant p.domain w.1) a ka -
+      constantLoss (fun w : Decor => isMaskedConstant p.domain w.1) b kb = c at h ⊢
+    generalize isMaskedConstant p.domain (bin op a.1 b.1)=r at h ca ⊢
+    generalize availableB u p.domain p.wires (bin op a.1 b.1)=q at h ca ⊢
+    cases h1 : Nat.ble (k+p.paid+1) (p.bound+c)
+    · rw [h1] at h
+      cases h2 : Nat.ble (k+p.paid) (p.bound+c)
+      · simp [h2] at h
+      · have := Nat.ble_eq.mp h2
+        simp only [h2,cond_true,cond_false] at h
+        subst h
+        rw [ca rfl]
+        simp <;> omega
+    · rw [h1] at h
+      have l1 := Nat.ble_eq.mp h1
+      simp only [cond_true,Bool.or_eq_true,Bool.and_eq_true,Nat.ble_eq] at h
+      rcases h with rfl | ⟨l2,ha,hb⟩
+      · simp <;> omega
+      · first
+        | (have : (!q).toNat ≤ 1 := Bool.toNat_le _
+           omega)
+        | simp [ha,hb]
+theorem anyEq_iff (m : Nat) (l : List Nat) : anyEq m l=true ↔ m ∈ l := by
+  induction l with
+  | nil => simp [anyEq]
+  | cons a l ih =>
+    change or (Nat.beq m a) (anyEq m l)=true ↔ _
+    rw [Bool.or_eq_true,ih,Nat.beq_eq,List.mem_cons]
+noncomputable def linkAt (fl : Nat → Option (List Nat)) (l : Lane) (i j op : Nat) (ka kb : Bool) : Bool :=
+  force (l.2.2.2.2.1.getD i 0) fun x => force (l.2.2.2.2.1.getD j 0) fun y => force (zN op x y) fun z =>
+  Option.rec false (fun ys => forceMap (fun v => v) ys fun ys =>
+    and (anyEq z ys) (and (l.2.2.2.2.1.all fun v => or (and (not ka) (Nat.beq v x)) (or (and (not kb) (Nat.beq v y)) (anyEq v ys)))
+      (ys.all fun v => or (Nat.beq v z) (and (and (or ka (not (Nat.beq v x))) (or kb (not (Nat.beq v y)))) (anyEq v l.2.2.2.2.1)))))
+    (fl (Nat.add (kwN z) (Nat.sub (Nat.sub l.2.2.2.2.2 (cond ka 0 (kwN x))) (cond kb 0 (kwN y)))))
+theorem keySet_sum (xs : List Sig) : keySet xs = (xs.map keyWord).sum := by
+  have go (a : Nat) : xs.foldl (fun v x => v+keyWord x) a = a+(xs.map keyWord).sum := by
+    induction xs generalizing a with
+    | nil => rfl
+    | cons x xs ih => rw [List.foldl_cons,ih,List.map_cons,List.sum_cons,Nat.add_assoc]
+  exact (go 0).trans (Nat.zero_add _)
+theorem delTwo_sum (f : Decor → Nat) {ws : List Decor} {a b : Decor} (ha : a ∈ ws) (hb : b ∈ ws) (ne : a≠b) (ka kb : Bool) :
+    ((delTwo ws a b ka kb).map f).sum = (ws.map f).sum - (cond ka 0 (f a)) - (cond kb 0 (f b)) := by
+  have er {l : List Decor} {x : Decor} (hx : x ∈ l) : (l.map f).sum = f x + ((l.erase x).map f).sum := by
+    have := ((List.perm_cons_erase hx).map f).sum_eq
+    rwa [List.map_cons,List.sum_cons] at this
+  have hm : b ∈ ws.erase a := (List.mem_erase_of_ne (Ne.symm ne)).mpr hb
+  have e1 := er ha
+  have e2 := er hb
+  have e3 := er hm
+  cases ka <;> cases kb <;> simp only [delTwo,delOne,Bool.false_eq_true,ite_true,ite_false,cond_true,cond_false] <;> omega
+theorem fastCost_good {u p k ws a b op ka kb} (ha : a∈ws) (hb : b∈ws) (ne : a≠b) (al : allowedB u op=true)
+    (h : slowCost u p ws k a b op ka kb=true) :
+    scalarPoolCut u p k ((delTwo ws a b ka kb).map Prod.fst) (movedChoice op a b)=true := by
+  let const := fun w : Decor => isMaskedConstant p.domain w.1
+  let z := bin op a.1 b.1
+  let rest := delTwo ws a b ka kb
+  have ck := keptCount const ws a b ka kb
+  change ws.countP const - constantLoss const a ka - constantLoss const b kb ≤ rest.countP const at ck
+  simp only [slowCost,Bool.and_eq_true,beq_iff_eq,decide_eq_true_eq] at h
+  obtain ⟨⟨hu,hc⟩,hz⟩ := h
+  have sum := delTwo_sum (unav u p) ha hb ne ka kb
+  rw [hu] at sum
+  have zs : ((delTwo ws a b ka kb).map (unav u p)).sum=0 := by omega
+  have hs : (rest.map Prod.fst).all (availableB u p.domain p.wires)=true := by
+    apply List.all_eq_true.mpr
+    intro _ hm
+    obtain ⟨w,hw,rfl⟩ := List.mem_map.mp hm
+    have v := List.sum_eq_zero_iff.mp zs _ (List.mem_map_of_mem hw)
+    cases e : availableB u p.domain p.wires w.1
+    · simp [unav,e] at v
+    · rfl
+  have opOK : (!(!availableB u p.domain p.wires z) || choiceOK u p.domain p.wires (movedChoice op a b))=true := by
+    simp only [Bool.or_eq_true,Bool.and_eq_true] at hz
+    rcases hz with hz | ⟨x,y⟩
+    · simp [z,hz]
+    · simp [choiceOK,movedChoice,x,y,al]
+  change k+p.paid+(!availableB u p.domain p.wires z).toNat < p.bound+(ws.countP const - constantLoss const a ka -
+        constantLoss const b kb+(isMaskedConstant p.domain z).toNat) at hc
+  dsimp only [rest] at hs
+  have ez : choiceVal (movedChoice op a b)=z := rfl
+  simp only [scalarPoolCut,ez,hs,opOK,Bool.and_true,decide_eq_true_eq,List.countP_cons,
+      List.countP_map,Function.comp_def]
+  change k+p.paid+(!availableB u p.domain p.wires z).toNat <
+      p.bound+(rest.countP const + if isMaskedConstant p.domain z then 1 else 0)
+  cases hc' : isMaskedConstant p.domain z <;> simp [hc'] at hc ⊢ <;> omega
+theorem zN_full (op : Nat) (a b : Sig) : zN op a.toNat b.toNat = (bin op a b).toNat := by
+  have e (v : Sig) : nmask one.toNat v = v.toNat := by
+    rw [nmask_eq]
+    congr 1
+    exact BitVec.and_allOnes
+  have := zN_eq op one a b
+  rwa [e,e,e] at this
+theorem getW (ws : List Decor) (i : Nat) :
+    (ws.map (fun w : Decor => w.1.toNat)).getD i 0 = (ws.getD i defaultDecor).1.toNat := by
+  simp only [List.getD_eq_getElem?_getD,List.getElem?_map]
+  cases ws[i]? with
+  | none =>
+    have z0 : zero.toNat=0 := by simp [zero]
+    exact z0.symm
+  | some v => rfl
+theorem wire_ne {c : NodeContext} {i j} (nd : (c.2.2.1.map Prod.fst).Nodup)
+    (hi : i<c.2.2.1.length) (hj : j<c.2.2.1.length) (hij : i≠j) : (contextWire c i).1 ≠ (contextWire c j).1 := by
+  have gi : contextWire c i = c.2.2.1[i] := by simp [contextWire,List.getD_eq_getElem?_getD,hi]
+  have gj : contextWire c j = c.2.2.1[j] := by simp [contextWire,List.getD_eq_getElem?_getD,hj]
+  rw [gi,gj]
+  intro e
+  apply hij
+  apply (List.Nodup.getElem_inj_iff nd (hi:=by simpa using hi) (hj:=by simpa using hj)).mp
+  simpa using e
+theorem link_sound {c : NodeContext} {fl i j op ka kb} (nd : (c.2.2.1.map Prod.fst).Nodup)
+    (hfl : ∀ tag ys, fl tag=some ys → ∃ xs ∈ c.2.2.2.2.2 tag, ys=xs.map BitVec.toNat)
+    (hi : i<c.2.2.1.length) (hj : j<c.2.2.1.length) (hij : i≠j) (h : linkAt fl (laneOf c) i j op ka kb=true) :
+    (c.2.2.2.2.2 (keySet (choiceVal (movedChoice op (contextWire c i) (contextWire c j)) ::
+      (delTwo c.2.2.1 (contextWire c i) (contextWire c j) ka kb).map Prod.fst))).any (sameWords
+      (choiceVal (movedChoice op (contextWire c i) (contextWire c j)) ::
+      (delTwo c.2.2.1 (contextWire c i) (contextWire c j) ka kb).map Prod.fst))=true := by
+  have mem (t) (ht : t<c.2.2.1.length) : contextWire c t ∈ c.2.2.1 := by
+    simp [contextWire,List.getD_eq_getElem?_getD,ht]
+  have hne := wire_ne nd hi hj hij
+  have ha := mem i hi
+  have hb := mem j hj
+  have hab : contextWire c i ≠ contextWire c j := fun e => hne (congrArg Prod.fst e)
+  have kv (v : Sig) := kept_value nd ha hb ka kb v
+  have sum := delTwo_sum (fun w : Decor => keyWord w.1) ha hb hab ka kb
+  have wi : contextWire c i = c.2.2.1.getD i defaultDecor := rfl
+  have wj : contextWire c j = c.2.2.1.getD j defaultDecor := rfl
+  simp only [linkAt,laneOf,force_eq,getW,←wi,←wj,zN_full] at h
+  generalize contextWire c i=a at *
+  generalize contextWire c j=b at *
+  change Option.rec false _ (fl (keyWord (bin op a.1 b.1)+(((c.2.2.1.map (fun w : Decor => w.1.toNat)).map kwN).sum -
+    (cond ka 0 (keyWord a.1)) - (cond kb 0 (keyWord b.1)))))=true at h
+  have tot : ((c.2.2.1.map (fun w : Decor => w.1.toNat)).map kwN).sum = (c.2.2.1.map (fun w : Decor => keyWord w.1)).sum := by
+    rw [List.map_map]
+    rfl
+  rw [tot,←sum] at h
+  have tag : keySet (choiceVal (movedChoice op a b) :: (delTwo c.2.2.1 a b ka kb).map Prod.fst) =
+      keyWord (bin op a.1 b.1)+((delTwo c.2.2.1 a b ka kb).map (fun w : Decor => keyWord w.1)).sum := by
+    rw [keySet_sum,List.map_cons,List.sum_cons,List.map_map]
+    rfl
+  rw [←tag] at h
+  generalize keySet (choiceVal (movedChoice op a b) :: (delTwo c.2.2.1 a b ka kb).map Prod.fst)=t at h ⊢
+  cases hf : fl t with
+  | none => simp [hf] at h
+  | some ys =>
+    obtain ⟨xs,hx,rfl⟩ := hfl t ys hf
+    rw [hf] at h
+    simp only [forceMap_eq,List.map_id',Bool.and_eq_true,List.all_eq_true,Bool.or_eq_true,anyEq_iff,Nat.beq_eq,Bool.not_eq_true'] at h
+    obtain ⟨h1,h2,h3⟩ := h
+    have back {v : Sig} (hv : v.toNat ∈ xs.map BitVec.toNat) : v ∈ xs := by
+      obtain ⟨w,hw,e⟩ := List.mem_map.mp hv
+      exact BitVec.toNat_inj.mp e ▸ hw
+    apply List.any_eq_true.mpr
+    refine ⟨xs,hx,?_⟩
+    simp only [sameWords,Bool.and_eq_true,List.all_eq_true,List.contains_eq_mem,decide_eq_true_eq]
+    constructor
+    · intro v hv
+      rcases List.mem_cons.mp hv with rfl | hv
+      · exact back h1
+      · obtain ⟨hw,va,vb⟩ := (kv v).mp hv
+        obtain ⟨w,hm,rfl⟩ := List.mem_map.mp hw
+        rcases h2 _ (List.mem_map_of_mem hm) with ⟨x,y⟩ | ⟨x,y⟩ | x
+        · rcases va with va | va
+          · exact absurd (BitVec.toNat_inj.mp y) va
+          · simp [va] at x
+        · rcases vb with vb | vb
+          · exact absurd (BitVec.toNat_inj.mp y) vb
+          · simp [vb] at x
+        · exact back x
+    · intro v hv
+      rcases h3 _ (List.mem_map_of_mem hv) with x | ⟨⟨x,y⟩,m⟩
+      · exact List.mem_cons.mpr (Or.inl (BitVec.toNat_inj.mp x))
+      · refine List.mem_cons_of_mem _ ((kv v).mpr ⟨?_,?_,?_⟩)
+        · obtain ⟨w,hw,e⟩ := List.mem_map.mp m
+          exact BitVec.toNat_inj.mp e ▸ List.mem_map_of_mem hw
+        · rcases x with x | x
+          · exact Or.inr x
+          · refine Or.inl fun e => ?_
+            subst e
+            simp at x
+        · rcases y with x | x
+          · exact Or.inr x
+          · refine Or.inl fun e => ?_
+            subst e
+            simp at x
+noncomputable def fallbackAt (fl : Nat → Option (List Nat)) (l : Lane) (i j op : Nat) (ka kb : Bool) : Bool :=
+  or (and (and (Nat.ble (Nat.succ i) l.2.1) (and (Nat.ble (Nat.succ j) l.2.1) (and (Nat.ble (Nat.succ op) l.2.2.1) (not (Nat.beq i j)))))
+    (or (l.2.2.2.1.any fun s => fastCost s i j op ka kb) (linkAt fl l i j op ka kb))) (checkAt l.1 i j op ka kb)
+theorem fallback_sound {c : NodeContext} {fl i j op ka kb} (nd : (c.2.2.1.map Prod.fst).Nodup)
+    (hfl : ∀ tag ys, fl tag=some ys → ∃ xs ∈ c.2.2.2.2.2 tag, ys=xs.map BitVec.toNat)
+    (h : fallbackAt fl (laneOf c) i j op ka kb=true) :
+    checkAt c i j op ka kb=true := by
+  simp only [fallbackAt,Bool.or_eq_true,Bool.and_eq_true] at h
+  rcases h with ⟨⟨hi,hj,ho,hn⟩,h | h⟩ | h
+  · have hi := Nat.ble_eq.mp hi
+    have hj := Nat.ble_eq.mp hj
+    have ho := Nat.ble_eq.mp ho
+    change Nat.succ i ≤ c.2.2.1.length at hi
+    change Nat.succ j ≤ c.2.2.1.length at hj
+    change Nat.succ op ≤ cond c.2.2.2.1.2 4 2 at ho
+    have al : allowedB c.2.2.2.1.2 op=true := by
+      cases hu : c.2.2.2.1.2 <;> simp [hu] at ho <;> simp [allowedB] <;> omega
+    have mem (t) (ht : t<c.2.2.1.length) : contextWire c t ∈ c.2.2.1 := by
+      simp [contextWire,List.getD_eq_getElem?_getD,ht]
+    obtain ⟨_,hm,ok⟩ := List.any_eq_true.mp h
+    obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm
+    have hne := wire_ne nd hi hj (fun e => by simp [e] at hn)
+    have closed := fastCost_good (mem i hi) (mem j hj) (fun e => hne (congrArg Prod.fst e)) al (fast_slow ok)
+    have cut : c.2.2.2.2.1.any (fun p => scalarPoolCut c.2.2.2.1.2 p (c.1-1)
+        ((delTwo c.2.2.1 (contextWire c i) (contextWire c j) ka kb).map Prod.fst)
+        (movedChoice op (contextWire c i) (contextWire c j)))=true :=
+      List.any_eq_true.mpr ⟨p,hp,closed⟩
+    simp only [checkAt,evalMove,closeChild,cut,Bool.or_true]
+    repeat' split
+    all_goals rfl
+  · have cut := link_sound nd hfl (Nat.ble_eq.mp hi) (Nat.ble_eq.mp hj) (fun e => by simp [e] at hn) h
+    simp only [checkAt,evalMove,closeChild,cut,Bool.true_or]
+    repeat' split
+    all_goals rfl
+  · exact h
+def swapIdx (v t : Nat) : Nat := cond (Nat.beq t (v &&& 15)) (v >>> 4) (cond (Nat.beq t (v >>> 4)) (v &&& 15) t)
+def validSwap (v : Nat) : Bool := and (Nat.ble ((v &&& 15)+1) (v >>> 4)) (Nat.ble ((v >>> 4)+1) 9)
+set_option maxRecDepth 8192 in
+theorem swap_table : ∀ v : Fin 144, validSwap v.val=true → ∀ t : Fin 9, swapIdx v.val t.val<9 ∧
+    wordMove (swapRows v.val) (inputs.getD t.val zero) = inputs.getD (swapIdx v.val t.val) zero := by decide +kernel
+theorem swap_input {v t : Nat} (hv : validSwap v=true) (ht : t<9) : swapIdx v t<9 ∧
+    wordMove (swapRows v) (inputs.getD t zero) = inputs.getD (swapIdx v t) zero := by
+  have lt : v<144 := by
+    simp only [validSwap,Bool.and_eq_true,Nat.ble_eq,Nat.shiftRight_eq_div_pow] at hv
+    omega
+  exact swap_table ⟨v,lt⟩ hv ⟨t,ht⟩
+def idxOf (perm : List Nat) (t : Nat) : Nat := perm.foldl (fun t v => swapIdx v t) t
+theorem idx_move {perm : List Nat} (ok : perm.all validSwap=true) {t : Nat} (ht : t<9) :
+    movedWord (perm.map swapRows).reverse (inputs.getD t zero) = inputs.getD (idxOf perm t) zero := by
+  rw [movedWord,List.foldr_reverse,List.foldl_map]
+  induction perm generalizing t with
+  | nil => rfl
+  | cons v perm ih =>
+    simp only [List.all_cons,Bool.and_eq_true] at ok
+    obtain ⟨lt,e⟩ := swap_input ok.1 ht
+    rw [List.foldl_cons,e,ih ok.2 lt]
+    rfl
+noncomputable def decodeN : Nat → Nat → List Nat → List Nat
+  | 0,_,ws => ws
+  | n+1,bits,ws => force (zN ((bits >>> 8) &&& 3) (ws.getD (bits &&& 15) 0) (ws.getD ((bits >>> 4) &&& 15) 0))
+      fun z => decodeN n (bits >>> 10) (ws++[z])
+theorem decodeN_eq (F : Sig → Nat) (F0 : F zero=0) (Fb : ∀ op a b, F (bin op a b)=zN op (F a) (F b))
+    (n bits : Nat) (ds : List Decor) :
+    (decodeBank n bits ds).map (fun w => F w.1) = decodeN n bits (ds.map fun w => F w.1) := by
+  have gd (ds : List Decor) (i : Nat) : (ds.map fun w => F w.1).getD i 0 = F (ds.getD i defaultDecor).1 := by
+    simp only [List.getD_eq_getElem?_getD,List.getElem?_map]
+    cases ds[i]? with
+    | none => exact F0.symm
+    | some v => rfl
+  induction n generalizing bits ds with
+  | zero => rfl
+  | succ n ih =>
+    rw [decodeN,force_eq,decodeBank,ih,gd,gd,←Fb,List.map_append]
+    rfl
+theorem selectLive_map {α β : Type} (f : α → β) (bits : Nat) (ws : List α) :
+    (selectLive bits ws).map f = selectLive bits (ws.map f) := by
+  induction ws generalizing bits with
+  | nil => rfl
+  | cons w ws ih =>
+    rw [List.map_cons,selectLive,selectLive]
+    split
+    · rw [List.map_cons,ih]
+    · exact ih _
+noncomputable def fastState (g : Forest) (k i : Nat) (perm : List Nat) : List Nat :=
+  let raw := (selected g.mask).map fun e => (inputs.getD (idxOf perm e.1) zero).toNat
+  let (_,depth,_,_,_,_,_,data) := g.levels k
+  let len := 10*depth
+  force (forestRecord (g.levels k) (selected g.mask).length i) fun rec =>
+  selectLive (rec >>> len) (decodeN depth (rec &&& ((1 <<< len)-1)) raw)
+theorem fastState_eq (g : Forest) (k i : Nat) {perm : List Nat} (ok : perm.all validSwap=true) :
+    fastState g k i perm = ((stateSet g k i).map (movedWord (perm.map swapRows).reverse)).map BitVec.toNat := by
+  let ms := (perm.map swapRows).reverse
+  let F (a : Sig) : Nat := (movedWord ms a).toNat
+  have F0 : F zero=0 := by
+    change (movedWord ms zero).toNat=0
+    rw [moved_eq_rename,(rename_constants _).1]
+    simp [zero]
+  have Fb (op a b) : F (bin op a b)=zN op (F a) (F b) := by
+    change (movedWord ms (bin op a b)).toNat = zN op (movedWord ms a).toNat (movedWord ms b).toNat
+    rw [zN_full,moved_eq_rename,rename_bin,moved_eq_rename,moved_eq_rename]
+  have raw : (wiresOf g).map (fun w => F w.1) = (selected g.mask).map fun e => (inputs.getD (idxOf perm e.1) zero).toNat := by
+    simp only [wiresOf,rawDecor,List.map_map]
+    apply List.map_congr_left
+    rintro ⟨j,a⟩ hm
+    obtain ⟨hj,rfl⟩ := selected_entry hm
+    exact congrArg BitVec.toNat (idx_move ok hj)
+  have len : (wiresOf g).length = (selected g.mask).length := by simp [wiresOf,rawDecor]
+  unfold fastState stateSet readNode
+  rcases g.levels k with ⟨a,depth,b,c,d,e,f,data⟩
+  simp only [force_eq,storedDepth,len]
+  rw [List.map_map,List.map_map,selectLive_map,←raw,←decodeN_eq F F0 Fb]
+  rfl
+noncomputable def linkedFast (g : Forest) (k : Nat) (pair : Nat × Nat) : Option (List Nat) :=
+  if pair.1 ≥ (g.levels k).1 then none else
+    (g.autos[pair.2]?).bind fun perm => cond (perm.all validSwap) (some (fastState g k pair.1 perm)) none
+noncomputable def flOf (g : Forest) (k : Nat) : Nat → Option (List Nat) := fun tag => (g.index k tag).bind (linkedFast g (k-1))
+noncomputable def batchMove (fl : Nat → Option (List Nat)) (u : Bool) (b : Batch) (xs : List Lane) (i j op : Nat) (ka kb : Bool) :=
+  let (k,n,r,_,cov) := b
+  let len := 1+(n-(if ka then 0 else 1)-(if kb then 0 else 1))
+  if len>k then true else
+    let a := laneWire b i
+    let b' := laneWire b j
+    let z := packedOp op a b'
+    let mask := fullMarks r (takePacked cov (packedColumn (!u) a) (packedColumn (!u) b') ka kb ||| packedColumn (!u) z)
+    onMarks (fun c => fallbackAt fl c i j op ka kb) mask xs
+theorem batchMove_at {fl u} (k n) (xs : List NodeContext) {i j op : Nat} {ka kb}
+    (hi : i<n) (hj : j<n) {q : Nat} (hq : q<xs.length)
+    (budget : xs[q].1=k) (arity : xs[q].2.1=n) (mode : xs[q].2.2.2.1.2=u) (nd : (xs[q].2.2.1.map Prod.fst).Nodup)
+    (hfl : ∀ tag ys, fl tag=some ys → ∃ zs ∈ xs[q].2.2.2.2.2 tag, ys=zs.map BitVec.toNat)
+    (pass : batchMove fl u (makeBatch k n xs) (xs.map laneOf) i j op ka kb=true) :
+    checkAt xs[q] i j op ka kb=true := by
+  let len := 1+(n-(if ka then 0 else 1)-(if kb then 0 else 1))
+  have eval : checkAt xs[q] i j op ka kb =
+      if len>k then true else if combField xs[q] (!u) ka kb op i j != BitVec.allOnes 152 then true
+      else if !properB (dbin op (contextWire xs[q] i) (contextWire xs[q] j)).1 ||
+        xs[q].2.2.1.any (fun v => v.1==(dbin op (contextWire xs[q] i) (contextWire xs[q] j)).1)
+      then true else closeChild u xs[q].2.2.2.2.1 xs[q].2.2.2.2.2 (k-1)
+        ((delTwo xs[q].2.2.1 (contextWire xs[q] i) (contextWire xs[q] j) ka kb).map Prod.fst)
+        (movedChoice op (contextWire xs[q] i) (contextWire xs[q] j)) := by
+    simp only [checkAt,evalMove,budget,arity,mode,len,combField] <;> rfl
+  by_cases small : len>k
+  · simp [eval,small]
+  · let r := units xs.length
+    let a := laneWire (makeBatch k n xs) i
+    let b := laneWire (makeBatch k n xs) j
+    let cov := packedCov (fun c : NodeContext => c.2.2.2.1.1) xs
+    change (if len>k then true else onMarks _ (fullMarks r
+       (takePacked cov (packedColumn (!u) a) (packedColumn (!u) b) ka kb |||
+        packedColumn (!u) (packedOp op a b))) (xs.map laneOf)) = true at pass
+    rw [if_neg small] at pass
+    have ca : a = _ := laneWire_at k n xs hi
+    have cb : b = _ := laneWire_at k n xs hj
+    dsimp only [r,cov] at pass
+    rw [ca,cb,packed_op,packed_column,packed_column,packed_column,takePacked_ok,lanes_or] at pass
+    by_cases hit : combField xs[q] (!u) ka kb op i j = BitVec.allOnes 152
+    · apply fallback_sound nd hfl
+      have m := marked_ok _ _ _ q (by simpa using hq) (by
+        rw [mark_at _ _ _ hq]
+        exact beq_iff_eq.mpr hit) pass
+      simpa only [List.getElem_map] using m
+    · rw [eval,if_neg small,if_pos (bne_iff_ne.mpr hit)]
+noncomputable def batchPair (fl : Nat → Option (List Nat)) (u : Bool) (b : Batch) (xs : List Lane) (i j op : Nat) :=
+  let f := batchMove fl u b xs i j op
+  f false false && f true false && f false true && f true true
+noncomputable def batchRow (fl : Nat → Option (List Nat)) (u : Bool) (b : Batch) (xs : List Lane) (i : Nat) (js : List Nat) :=
+    js.all (fun j => (opsOf u).all (batchPair fl u b xs i j))
+noncomputable def batchRows (fl : Nat → Option (List Nat)) (u : Bool) (b : Batch) (xs : List Lane) : List Nat → Bool
+  | [] => true
+  | i::js => batchRow fl u b xs i js && batchRows fl u b xs js
+theorem batchRows_at {fl u} (k n) (xs : List NodeContext) {q : Nat} (hq : q<xs.length)
+    (budget : xs[q].1=k) (arity : xs[q].2.1=n) (mode : xs[q].2.2.2.1.2=u) (nd : (xs[q].2.2.1.map Prod.fst).Nodup)
+    (hfl : ∀ tag ys, fl tag=some ys → ∃ zs ∈ xs[q].2.2.2.2.2 tag, ys=zs.map BitVec.toNat)
+    (js : List Nat)
+    (bounds : ∀ j ∈ js, j<n) (allRows : batchRows fl u (makeBatch k n xs) (xs.map laneOf) js=true) :
+    testAll xs[q] (js.map (contextWire xs[q])) = true := by
+  induction js with
+  | nil => rfl
+  | cons i js ih =>
+    simp only [batchRows,Bool.and_eq_true,batchRow,List.all_eq_true] at allRows
+    simp only [List.map_cons,testAll,testRow,Bool.and_eq_true,List.all_eq_true,List.mem_map]
+    have hi := bounds i List.mem_cons_self
+    refine ⟨?_,ih (fun j hj => bounds j (List.mem_cons_of_mem _ hj)) allRows.2⟩
+    rintro _ ⟨j,hj,rfl⟩ op hop
+    have hj' := bounds j (List.mem_cons_of_mem _ hj)
+    rw [mode] at hop
+    have pass := allRows.1 j hj op hop
+    have check := @batchMove_at fl u k n xs i j op
+    simp only [batchPair,Bool.and_eq_true] at pass
+    simp only [testPair,Bool.and_eq_true]
+    exact ⟨⟨⟨check hi hj' hq budget arity mode nd hfl pass.1.1.1,check hi hj' hq budget arity mode nd hfl pass.1.1.2⟩,
+      check hi hj' hq budget arity mode nd hfl pass.1.2⟩,check hi hj' hq budget arity mode nd hfl pass.2⟩
+noncomputable def runBatch (fl : Nat → Option (List Nat)) (u : Bool) (k n : Nat) (xs : List NodeContext) :=
+    batchRows fl u (makeBatch k n xs) (xs.map laneOf) (List.range n)
+theorem runBatch_at {fl u k n} {xs : List NodeContext} {q} (hq : q<xs.length)
+    (hb : xs[q].1=k) (ha : xs[q].2.1=n) (hm : xs[q].2.2.2.1.2=u) (nd : (xs[q].2.2.1.map Prod.fst).Nodup)
+    (hfl : ∀ tag ys, fl tag=some ys → ∃ zs ∈ xs[q].2.2.2.2.2 tag, ys=zs.map BitVec.toNat)
+    (hn : xs[q].2.2.1.length=n)
+    (pass : runBatch fl u k n xs=true) : testAll xs[q] xs[q].2.2.1=true := by
+  have all := batchRows_at k n xs hq hb ha hm nd hfl (List.range n) (fun _ => List.mem_range.mp) pass
+  have eq : (List.range n).map (contextWire xs[q]) = xs[q].2.2.1 := by
+    apply List.ext_getElem
+    · simp [hn]
+    · intro i h1 h2
+      simp [contextWire,List.getD_eq_getElem?_getD,h2]
+  rwa [eq] at all
+def contextOf (g : Forest) (k i : Nat) : NodeContext :=
+  let raw := wiresOf g
+  let (num,depth,cw,iw,pw,offw,lw,data) := g.levels k
+  let (ops,bank,ws) := readNode g k i
+  let rules := (forestHints (g.levels k) raw.length i).filterMap (fun (a,b) => buildRule g ops depth bank a b)
+  let ls := fun tag => ((g.index k tag).bind (linkedSet g (k-1))).toList
+  (k,ws.length,ws,preCov g.mode ws,rules,ls)
+theorem flOf_ok (g : Forest) (k i tag : Nat) (ys) (h : flOf g k tag=some ys) :
+    ∃ xs ∈ (contextOf g k i).2.2.2.2.2 tag, ys=xs.map BitVec.toNat := by
+  change ∃ xs ∈ ((g.index k tag).bind (linkedSet g (k-1))).toList, _
+  unfold flOf at h
+  cases hp : g.index k tag with
+  | none => simp [hp] at h
+  | some pair =>
+    simp only [hp,Option.bind_some,linkedFast] at h
+    simp only [Option.bind_some,linkedSet]
+    split at h
+    · contradiction
+    next v =>
+      cases ha : g.autos[pair.2]? with
+      | none => simp [ha] at h
+      | some perm =>
+        simp only [ha,Option.bind_some] at h
+        cases hv : perm.all validSwap with
+        | false => simp [hv] at h
+        | true =>
+          simp only [hv,cond_true,Option.some.injEq] at h
+          refine ⟨(stateSet g (k-1) pair.1).map (movedWord (perm.map swapRows).reverse),?_,?_⟩
+          · simp [v]
+          · exact h.symm.trans (fastState_eq g _ _ hv)
+def prelim (T : Sig) (c : NodeContext) :=
+  let ws := c.2.2.1.map Prod.fst
+  decide ws.Nodup && !(ws.contains T)
+theorem from_context (g : Forest) (k i : Nat) :
+    nodeVerified g k i = (prelim (targetOf g) (contextOf g k i) &&
+      (if k=0 then true else testAll (contextOf g k i) (contextOf g k i).2.2.1)) := rfl
+theorem makeBlock {g k start n} (h : ∀ (i : Nat), start ≤ i → i < start + n → nodeVerified g k i = true) :
+    block g k start n=true := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+    simp only [block,Bool.and_eq_true]
+    exact ⟨h _ (by omega) (by omega),ih (fun i le lt => h i le (by omega))⟩
+def contexts (g : Forest) (k start n : Nat) :=
+  ((List.range n).map (start+·)).map (contextOf g k)
+def header (g : Forest) (k start n ar : Nat) :=
+  (contexts g k start n).all (fun c => c.2.1==ar && prelim (targetOf g) c)
+noncomputable def rowCut (g : Forest) (k start n ar lo len : Nat) :=
+  let xs := contexts g k start n
+  let b := makeBatch k ar xs
+  forceLanes xs fun ys => (List.range len).all (fun d =>
+    let i := lo+d
+    batchRow (flOf g k) g.mode b ys i (List.range' (i+1) (ar-(i+1))))
+theorem rowCut_at {g k start n ar lo len} (h : rowCut g k start n ar lo len=true)
+    (i : Nat) (l : lo ≤ i) (r : i < lo+len) :
+    batchRow (flOf g k) g.mode (makeBatch k ar (contexts g k start n)) ((contexts g k start n).map laneOf)
+      i (List.range' (i+1) (ar-(i+1)))=true := by
+  simp only [rowCut,forceLanes_eq] at h
+  have ha := List.all_eq_true.mp h (i-lo) (List.mem_range.mpr (by omega))
+  simpa only [Nat.add_sub_of_le l] using ha
+theorem rowCut_merge {g k start n ar lo a b}
+    (h : rowCut g k start n ar lo a=true) (t : rowCut g k start n ar (lo+a) b=true) :
+    rowCut g k start n ar lo (a+b)=true := by
+  simp only [rowCut,forceLanes_eq]
+  apply List.all_eq_true.mpr
+  intro j hj
+  have jlt := List.mem_range.mp hj
+  by_cases first : j<a
+  · exact rowCut_at h (lo+j) (by omega) (by omega)
+  · exact rowCut_at t (lo+j) (by omega) (by omega)
+theorem cutsRun {g k start n ar} (h : rowCut g k start n ar 0 ar=true) :
+    runBatch (flOf g k) g.mode k ar (contexts g k start n)=true := by
+  let xs := contexts g k start n
+  have go (lo num : Nat) (eq : lo+num=ar) :
+      batchRows (flOf g k) g.mode (makeBatch k ar xs) (xs.map laneOf) (List.range' lo num)=true := by
+    induction num generalizing lo with
+    | zero => rfl
+    | succ num ih =>
+      simp only [List.range'_succ,batchRows,Bool.and_eq_true]
+      refine ⟨?_,ih (lo+1) (by omega)⟩
+      have ok := rowCut_at h lo (by omega) (by omega)
+      simpa only [show ar-(lo+1)=num by omega] using ok
+  unfold runBatch
+  rw [List.range_eq_range']
+  exact go 0 ar (by omega)
+theorem cutsBlock {g k start n ar} (hd : header g k start n ar=true)
+    (h : rowCut g k start n ar 0 ar=true) : block g k start n=true := by
+  apply makeBlock
+  intro i lo hi
+  let xs := contexts g k start n
+  have hm : contextOf g k i ∈ xs := by
+    apply List.mem_map.mpr
+    exact ⟨i,List.mem_map.mpr ⟨i-start,List.mem_range.mpr (by omega),by omega⟩,rfl⟩
+  obtain ⟨q,hq,e⟩ := List.getElem_of_mem hm
+  have one := List.all_eq_true.mp hd _ hm
+  simp only [Bool.and_eq_true,beq_iff_eq] at one
+  have hb : xs[q].1=k := by rw [e]; rfl
+  have ha : xs[q].2.1=ar := e ▸ one.1
+  have nd : (xs[q].2.2.1.map Prod.fst).Nodup := by
+    have p := one.2
+    simp only [prelim,Bool.and_eq_true,decide_eq_true_eq] at p
+    rw [e]
+    exact p.1
+  have hfl : ∀ tag ys, flOf g k tag=some ys → ∃ zs ∈ xs[q].2.2.2.2.2 tag, ys=zs.map BitVec.toNat := by
+    rw [e]
+    exact fun tag ys h => flOf_ok g k i tag ys h
+  have hm : xs[q].2.2.2.1.2=g.mode := by rw [e]; rfl
+  have hn : xs[q].2.2.1.length=ar := by rw [e]; exact one.1
+  rw [from_context,Bool.and_eq_true]
+  refine ⟨one.2,?_⟩
+  split
+  · rfl
+  · exact e ▸ runBatch_at hq hb ha hm nd hfl hn (cutsRun h)
+def boxes (g : Forest) (k start n ar lo num : Nat) : Nat → Prop
+  | 0 => rowCut g k start n ar lo num=true
+  | d+1 => boxes g k start n ar lo (num/2) d ∧ boxes g k start n ar (lo+num/2) (num-num/2) d
+theorem boxesCut {g k start n ar lo num d} (h : boxes g k start n ar lo num d) :
+    rowCut g k start n ar lo num=true := by
+  induction d generalizing lo num with
+  | zero => exact h
+  | succ d ih =>
+    have v := rowCut_merge (ih h.1) (ih h.2)
+    simpa only [Nat.add_sub_of_le (Nat.div_le_self num 2)] using v
+def cells (g : Forest) (k start n ar rows : Nat) : Nat → Prop
+  | 0 => header g k start n ar=true ∧ boxes g k start n ar 0 ar rows
+  | d+1 => cells g k start (n/2) ar rows d ∧ cells g k (start+n/2) (n-n/2) ar rows d
+theorem cellsBlock {g k start n ar rows d} (h : cells g k start n ar rows d) :
+    block g k start n=true := by
+  induction d generalizing start n with
+  | zero => exact cutsBlock h.1 (boxesCut h.2)
+  | succ d ih =>
+    have v := block_merge (ih h.1) (ih h.2)
+    simpa only [Nat.add_sub_of_le (Nat.div_le_self n 2)] using v
+end ForestCore
+end PEqualNP.Outside.L_meta_51392
+namespace PEqualNP.Outside.L_meta_51392.ForestCore
+open PEqualNP.MetaComplexity PEqualNP.CircuitLowerBounds
+private def proofWord80 (xs : List Nat) : Nat :=
+  xs.foldl (fun a b => (a <<< 80) ||| b) 0
+def g82Y : Array (Bits × Bits) := #[(0x0,0x0),((BitVec.ofNat 152 (0x3ff63ff63ff63ff63ff63ff63ff63ff63ff63f)),(BitVec.ofNat 152 (0x49204920492049204920492049204920492049))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xc7fbc7fbc7fbc7fbc7fbc7fbc7fbc7fbc7fbc7)),(BitVec.ofNat 152 (0x92409240924092409240924092409240924092))),(0x0,0x0),((BitVec.ofNat 152 (0xf8fdf8fdf8fdf8fdf8fdf8fdf8fdf8fdf8fdf8)),(BitVec.ofNat 152 (0x24812481248124812481248124812481248124))),(0x0,0x0),(0x0,0x0)]
+def g82C : List ColumnInfo := []
+def g82A : List (List Nat) := [[],[100],[65],[65,97],[97,65],[97]]
+def g82D3 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7
+def g82L : Nat → Packing
+  | 3 => (1,0,1,0,0,0,0,g82D3)
+  | _ => emptyPacking
+def g82I (_ _ : Nat) : Option (Nat × Nat) := none
+def g82 : Forest := ⟨82,3,fun i => g82Y[i]?.getD (0,0),g82C,g82A,g82L,g82I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g82P3_0 : block g82 3 0 1=true := by
+  apply cellsBlock (ar:=3) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g82B3 : block g82 3 0 1=true := g82P3_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g82T : checkedTables g82 3 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g82 0 0 0 = true)
+  · exact (rfl : block g82 1 0 0 = true)
+  · exact (rfl : block g82 2 0 0 = true)
+  · exact g82B3
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g82G : graphValid g82 (boundsBefore []) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low82 : Lower true (varsX 82) (qG_ 82) 4 := lower_forest (g:=g82) (i:=0) (hints:=16842816) (before_sound [] baseKnown) g82G g82T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K82 := extendKnown [] 4 [(82,[]),(137,[16,67,118]),(161,[16,84,118]),(164,[33,84,118]),(194,[100,84,117]),(196,[33,100,84,117]),(200,[49,33,100,84,117])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V82 : Known true K82 := extend_ok (m:=82) baseKnown low82 (by decide +kernel)
+def g45Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xe6de3fff03fff1ffe6de3fff03fff1ffe6de3f)),(BitVec.ofNat 152 (0x648490a285024020648490a28502402064849))),(0x0,0x0),((BitVec.ofNat 152 (0x19e9c0fffc07fe3f19e9c0fffc07fe3f19e9c0)),(BitVec.ofNat 152 (0x50e8db2c3161408450e8db2c3161408450e8db))),((BitVec.ofNat 152 (0xece607fffff8003fece607fffff8003fece607)),(BitVec.ofNat 152 (0x8a7b6b04185892808a7b6b04185892808a7b6))),(0x0,0x0),((BitVec.ofNat 152 (0x1b3df8ffffffffc01b3df8ffffffffc01b3df8)),(BitVec.ofNat 152 (0x891524c082060030891524c082060030891524))),(0x0,0x0),(0x0,0x0),(0x0,0x0)]
+def g45C : List ColumnInfo := []
+def g45A : List (List Nat) := [[],[80,50]]
+def g45D3 (j : Nat) : Nat := if 1 ≤ j then 0 else 0xf
+def g45L : Nat → Packing
+  | 3 => (1,0,1,0,0,0,0,g45D3)
+  | _ => emptyPacking
+def g45I (_ _ : Nat) : Option (Nat × Nat) := none
+def g45 : Forest := ⟨45,3,fun i => g45Y[i]?.getD (0,0),g45C,g45A,g45L,g45I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g45P3_0 : block g45 3 0 1=true := by
+  apply cellsBlock (ar:=4) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g45B3 : block g45 3 0 1=true := g45P3_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g45T : checkedTables g45 3 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g45 0 0 0 = true)
+  · exact (rfl : block g45 1 0 0 = true)
+  · exact (rfl : block g45 2 0 0 = true)
+  · exact g45B3
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g45G : graphValid g45 (boundsBefore K82) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low45 : Lower true (varsX 45) (qG_ 45) 4 := lower_forest (g:=g45) (i:=0) (hints:=1283) (before_sound K82 V82) g45G g45T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K45 := extendKnown K82 4 [(45,[]),(75,[96,33,16,49,83]),(77,[96,32,50,83]),(89,[96,32,67,50,83]),(101,[32,99,67]),(102,[32,16,83,67,100]),(105,[48,82,96,66,64]),(108,[32,16,49,81,65,100]),(147,[16,32,67,117,101]),(150,[16,67,117,101]),(209,[96,32,67,50,117])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V45 : Known true K45 := extend_ok (m:=45) V82 low45 (by decide +kernel)
+def g86Y : Array (Bits × Bits) := #[(0x0,0x0),((BitVec.ofNat 152 (0xfdf00fff81fc7e3ffbe01fff03f8fc7ff7c03f)),(BitVec.ofNat 152 (0x45c09245142904808b81248a28520901170249))),((BitVec.ofNat 152 (0xe6a8703ffe007fc7cd50e07ffc00ff8f9aa1c0)),(BitVec.ofNat 152 (0x96a9b6d618b228112d536dac316450225aa6db))),(0x0,0x0),((BitVec.ofNat 152 (0xfbb781ffffff8007f76f03ffffff000feede07)),(BitVec.ofNat 152 (0x235249820c03122046a49304180624408d492))),(0x0,0x0),((BitVec.ofNat 152 (0x64ffe3ffffffff80c9ffc7ffffffff0193ff8)),(BitVec.ofNat 152 (0x24920410040040004924082008008000924))),(0x0,0x0),(0x0,0x0)]
+def g86C : List ColumnInfo := [(4,0,82,0,4)]
+def g86A : List (List Nat) := [[],[65]]
+def g86D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x1f
+def g86L : Nat → Packing
+  | 4 => (1,0,1,0,0,0,0,g86D4)
+  | _ => emptyPacking
+def g86I (_ _ : Nat) : Option (Nat × Nat) := none
+def g86 : Forest := ⟨86,4,fun i => g86Y[i]?.getD (0,0),g86C,g86A,g86L,g86I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g86P4_0 : block g86 4 0 1=true := by
+  apply cellsBlock (ar:=4) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g86B4 : block g86 4 0 1=true := g86P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g86T : checkedTables g86 4 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g86 0 0 0 = true)
+  · exact (rfl : block g86 1 0 0 = true)
+  · exact (rfl : block g86 2 0 0 = true)
+  · exact (rfl : block g86 3 0 0 = true)
+  · exact g86B4
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g86G : graphValid g86 (boundsBefore K45) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low86 : Lower true (varsX 86) (qG_ 86) 5 := lower_forest (g:=g86) (i:=0) (hints:=16844352) (before_sound K45 V45) g86G g86T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K86 := extendKnown K45 5 [(86,[]),(90,[50]),(139,[32,16,67,118]),(141,[16,67,118]),(163,[32,16,84,118]),(166,[33,84,118]),(172,[33,49,84,118]),(195,[32,100,84,117]),(197,[16,32,100,84,117]),(212,[33,65,49,115,83]),(216,[49,66,114,82]),(225,[16,98,50,84,67,116]),(226,[82,50,100,116]),(232,[49,82,100,116])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V86 : Known true K86 := extend_ok (m:=86) V45 low86 (by decide +kernel)
+def g165Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xfe7d01c7fc0fc7cfe7d01c7fc0fc7cfe7d01c7)),(BitVec.ofNat 152 (0x51d124928a290a051d124928a290a051d1249))),(0x0,0x0),((BitVec.ofNat 152 (0x3f8b8e38fff007f3f8b8e38fff007f3f8b8e38)),(BitVec.ofNat 152 (0x884b924930c3210884b924930c3210884b9249))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0x3fe7703ffffff803fe7703ffffff803fe7703f)),(BitVec.ofNat 152 (0x10002492410402010002492410402010002492))),(0x0,0x0),((BitVec.ofNat 152 (0xc018ffc0fffffffc018ffc0fffffffc018ffc0)),(BitVec.ofNat 152 (0x20004924820804020004924820804020004924))),(0x0,0x0)]
+def g165C : List ColumnInfo := [(1,0,164,0,4)]
+def g165A : List (List Nat) := [[],[117],[32],[32,117]]
+def g165D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x1f
+def g165L : Nat → Packing
+  | 4 => (1,0,1,0,0,0,0,g165D4)
+  | _ => emptyPacking
+def g165I (_ _ : Nat) : Option (Nat × Nat) := none
+def g165 : Forest := ⟨165,4,fun i => g165Y[i]?.getD (0,0),g165C,g165A,g165L,g165I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g165P4_0 : block g165 4 0 1=true := by
+  apply cellsBlock (ar:=4) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g165B4 : block g165 4 0 1=true := g165P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g165T : checkedTables g165 4 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g165 0 0 0 = true)
+  · exact (rfl : block g165 1 0 0 = true)
+  · exact (rfl : block g165 2 0 0 = true)
+  · exact (rfl : block g165 3 0 0 = true)
+  · exact g165B4
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g165G : graphValid g165 (boundsBefore K86) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low165 : Lower true (varsX 165) (qG_ 165) 5 := lower_forest (g:=g165) (i:=0) (hints:=1285) (before_sound K86 V86) g165G g165T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K165 := extendKnown K86 5 [(165,[]),(169,[48,82,32]),(198,[16,101]),(201,[98,50,83]),(202,[16,50,101]),(204,[32,16,49,101]),(210,[64,16,114,50,49,81,101]),(228,[80,16,98,49,67,66])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V165 : Known true K165 := extend_ok (m:=165) V86 low165 (by decide +kernel)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low55 : Lower true (varsX 55) (qG_ 55) 4 := by
+  have q := @lower_count true (vars 55) (qG_ 55) (qP_ _ (by decide +kernel)) (graphPairs 55 66885) (by decide +kernel)
+  exact q
+def K55 := extendKnown K165 4 [(59,[48,82,32])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V55 : Known true K55 := extend_ok (m:=55) V165 low55 (by decide +kernel)
+def g79Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0x1fff0007ff803ffc01fffffffffff245f3f007)),(BitVec.ofNat 152 (0x502a8350250681482d0550950a414040f37b6d))),((BitVec.ofNat 152 (0x1ffffff800003fffffffe001ffe001b15bc038)),(BitVec.ofNat 152 (0x854c2a62b62b1591482986d84c8661a159c6db))),((BitVec.ofNat 152 (0x1fffffffffffc00001fffffe00000ce425d1c0)),(BitVec.ofNat 152 (0x6703383384c19e2704e04e06f0b88a425d6db))),((BitVec.ofNat 152 (0xe00000000000000001fffffffffff22fedae07)),(BitVec.ofNat 152 (0x7803c03c0701e0380700700700c022d0c8492))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xfffffffffffffffffe00000000000dfa9e5ff8)),(BitVec.ofNat 152 (0x1800c004000020000180180180100452820924))),(0x0,0x0),(0x0,0x0)]
+def g79C : List ColumnInfo := [(2,0,77,0,4)]
+def g79A : List (List Nat) := [[],[33]]
+def g79D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x3f
+def g79L : Nat → Packing
+  | 4 => (1,0,1,0,0,0,0,g79D4)
+  | _ => emptyPacking
+def g79I (_ _ : Nat) : Option (Nat × Nat) := none
+def g79 : Forest := ⟨79,4,fun i => g79Y[i]?.getD (0,0),g79C,g79A,g79L,g79I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g79P4_0 : block g79 4 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g79B4 : block g79 4 0 1=true := g79P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g79T : checkedTables g79 4 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g79 0 0 0 = true)
+  · exact (rfl : block g79 1 0 0 = true)
+  · exact (rfl : block g79 2 0 0 = true)
+  · exact (rfl : block g79 3 0 0 = true)
+  · exact g79B4
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g79G : graphValid g79 (boundsBefore K55) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low79 : Lower true (varsX 79) (qG_ 79) 5 := lower_forest (g:=g79) (i:=0) (hints:=16778851) (before_sound K55 V55) g79G g79T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K79 := extendKnown K55 5 [(124,[80,49,66,33,16]),(151,[64,16,49,118])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V79 : Known true K79 := extend_ok (m:=79) V55 low79 (by decide +kernel)
+def g91Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xffc00ffc3fe1ffc01ffff87ffcd452be00001f)),(BitVec.ofNat 152 (0x22a4a228884522a950a81148805012bf5ad6b5))),((BitVec.ofNat 152 (0xfffff0003fffffffe00fffffc31359e2007fe0)),(BitVec.ofNat 152 (0xb00c0b102800b0182c0a0010a025922318c63))),(0x0,0x0),((BitVec.ofNat 152 (0xffffffffc001fffffff0007ffcefd1140f801f)),(BitVec.ofNat 152 (0x4c0904c013084c020302c21200af4100a5294a))),((BitVec.ofNat 152 (0x1ffffffffff80004d2fe9f003e0)),(BitVec.ofNat 152 (0x700e07021c10700c0403001c104d06c0c6318c))),(0x0,0x0),((BitVec.ofNat 152 (0xfffffffffffe000000000000033aa61bfffc00)),(BitVec.ofNat 152 (0x8030080020018030180c04602110a019084210))),(0x0,0x0),(0x0,0x0)]
+def g91C : List ColumnInfo := [(0,1,82,8,5),(1,0,90,0,5),(2,0,89,0,4),(8,1,82,0,4),(16,0,75,0,4)]
+def g91A : List (List Nat) := [[],[65]]
+def g91D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x57d4d41
+def g91D5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x20120240d140ff41fd41fd31)
+def g91H5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0xc0
+def g91D6 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x18989f
+def g91H6 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x2051600028b5
+def g91L : Nat → Packing
+  | 4 => (1,2,3,0,0,0,0,g91D4)
+  | 5 => (3,1,3,0,0,5,0,g91D5)
+  | 6 => (1,0,3,0,0,0,0,g91D6)
+  | _ => emptyPacking
+def g91I : Nat → Nat → Option (Nat × Nat)
+  | 5 => lookupWord 1 2 0 4 0 0 g91H5
+  | 6 => lookupWord 1 11 0 7 2 1 g91H6
+  | _ => fun _ => none
+def g91 : Forest := ⟨91,6,fun i => g91Y[i]?.getD (0,0),g91C,g91A,g91L,g91I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g91P4_0 : block g91 4 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g91B4 : block g91 4 0 1=true := g91P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g91P5_0 : block g91 5 0 3=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g91B5 : block g91 5 0 3=true := g91P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g91P6_0 : block g91 6 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g91B6 : block g91 6 0 1=true := g91P6_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g91T : checkedTables g91 6 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g91 0 0 0 = true)
+  · exact (rfl : block g91 1 0 0 = true)
+  · exact (rfl : block g91 2 0 0 = true)
+  · exact (rfl : block g91 3 0 0 = true)
+  · exact g91B4
+  · exact g91B5
+  · exact g91B6
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g91G : graphValid g91 (boundsBefore K79) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low91 : Lower true (varsX 91) (qG_ 91) 7 := lower_forest (g:=g91) (i:=0) (hints:=16842819) (before_sound K79 V79) g91G g91T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K91 := extendKnown K79 7 [(91,[]),(118,[80,32,50]),(155,[64,16,49,118]),(179,[64,16,49,83,118]),(182,[64,33,16,49,83,118]),(241,[64,16,33,99,82,115])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V91 : Known true K91 := extend_ok (m:=91) V79 low91 (by decide +kernel)
+def g94Y : Array (Bits × Bits) := #[(0x0,0x0),((BitVec.ofNat 152 (0x3ffc003ffc01ffe00ffffffffffffeddea003f)),(BitVec.ofNat 152 (0x80a81a8128340a4160a02a094148524c6a1249))),((BitVec.ofNat 152 (0x3fffffc00001fffff007ff001ffc0118f681c0)),(BitVec.ofNat 152 (0x15315315b158ac8a45314c6d89919918f6b6db))),((BitVec.ofNat 152 (0x3ffffffffffe00000007ffffe000031f070e00)),(BitVec.ofNat 152 (0x19c19c19c260cf1389c2704e0de2e31f0736db))),((BitVec.ofNat 152 (0xc0000000000000000007fffffffffcbfdc7007)),(BitVec.ofNat 152 (0x1e01e01e0380f01c0e0380700e0300b3942492))),(0x0,0x0),((BitVec.ofNat 152 (0xfffffffffffffffffff800000000036237fff8)),(BitVec.ofNat 152 (0x20020020000100000004008010000000004924))),(0x0,0x0),(0x0,0x0)]
+def g94C : List ColumnInfo := [(4,0,90,0,5)]
+def g94A : List (List Nat) := [[],[50],[65],[65,50]]
+def g94D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x3f
+def g94L : Nat → Packing
+  | 5 => (1,0,1,0,0,0,0,g94D5)
+  | _ => emptyPacking
+def g94I (_ _ : Nat) : Option (Nat × Nat) := none
+def g94 : Forest := ⟨94,5,fun i => g94Y[i]?.getD (0,0),g94C,g94A,g94L,g94I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g94P5_0 : block g94 5 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g94B5 : block g94 5 0 1=true := g94P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g94T : checkedTables g94 5 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g94 0 0 0 = true)
+  · exact (rfl : block g94 1 0 0 = true)
+  · exact (rfl : block g94 2 0 0 = true)
+  · exact (rfl : block g94 3 0 0 = true)
+  · exact (rfl : block g94 4 0 0 = true)
+  · exact g94B5
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g94G : graphValid g94 (boundsBefore K91) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low94 : Lower true (varsX 94) (qG_ 94) 6 := lower_forest (g:=g94) (i:=0) (hints:=16868928) (before_sound K91 V91) g94G g94T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K94 := extendKnown K91 6 [(94,[]),(143,[64,16,33,50,118]),(174,[33,84,118])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V94 : Known true K94 := extend_ok (m:=94) V91 low94 (by decide +kernel)
+def g103Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xe001ffc07ff01ffe003ffc07ffffd37a12000f)),(BitVec.ofNat 152 (0x48d4128d0522c8549a9128d25229934a125555))),((BitVec.ofNat 152 (0xfffe00007fffffffffc00007ff01a3a9cc0f00)),(BitVec.ofNat 152 (0x82985b16164482981305b160644d2329c83333))),((BitVec.ofNat 152 (0xffffffff80001ffffffffff800003f4479f0f0)),(BitVec.ofNat 152 (0xe01c18078700e01c01c18078701304591111))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0x1ffffffffffffffe663f7600ff)),(BitVec.ofNat 152 (0x1301602058081301202600048000643124aaaa))),((BitVec.ofNat 152 (0xffffffffffffe0000000000000019dd38dff00)),(BitVec.ofNat 152 (0x1c01800060001c01c038020700808cd204cccc))),(0x0,0x0),(0x0,0x0)]
+def g103C : List ColumnInfo := []
+def g103A : List (List Nat) := [[],[16,101]]
+def g103D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x1f
+def g103L : Nat → Packing
+  | 4 => (1,0,1,0,0,0,0,g103D4)
+  | _ => emptyPacking
+def g103I (_ _ : Nat) : Option (Nat × Nat) := none
+def g103 : Forest := ⟨103,4,fun i => g103Y[i]?.getD (0,0),g103C,g103A,g103L,g103I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g103P4_0 : block g103 4 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g103B4 : block g103 4 0 1=true := g103P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g103T : checkedTables g103 4 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g103 0 0 0 = true)
+  · exact (rfl : block g103 1 0 0 = true)
+  · exact (rfl : block g103 2 0 0 = true)
+  · exact (rfl : block g103 3 0 0 = true)
+  · exact g103B4
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g103G : graphValid g103 (boundsBefore K94) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low103 : Lower true (varsX 103) (qG_ 103) 5 := lower_forest (g:=g103) (i:=0) (hints:=16778597) (before_sound K94 V94) g103G g103T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K103 := extendKnown K94 5 [(103,[]),(117,[65,49]),(121,[64,81,50,33,32,96])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V103 : Known true K103 := extend_ok (m:=103) V94 low103 (by decide +kernel)
+def g109Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xf003ff0ff87ff007ffff87fffcd47c560003ff)),(BitVec.ofNat 152 (0xa4280a201120a4521481102080501c1694a529))),(0x0,0x0),((BitVec.ofNat 152 (0xfffc000ffffffff801fff87fc35353a20ffc00)),(BitVec.ofNat 152 (0xc0302c40a002c060580a01010a425122318c63))),((BitVec.ofNat 152 (0xfffffff0007ffffffe00007ffcafd11df0001f)),(BitVec.ofNat 152 (0x140b002c20b0080602c220a00a741086318c6))),(0x0,0x0),((BitVec.ofNat 152 (0x7fffffffffff80004d2fe8007fe0)),(BitVec.ofNat 152 (0x982c08b044c09048130004c100d22c94a5294))),((BitVec.ofNat 152 (0xffffffffff80000000000000033aa61bff8000)),(BitVec.ofNat 152 (0xe03000c00700e0701c044702118a6118c6318))),(0x0,0x0),(0x0,0x0)]
+def g109C : List ColumnInfo := [(1,0,108,0,4),(4,0,105,0,4),(8,0,101,0,4),(32,0,77,0,4),(64,0,45,0,4)]
+def g109A : List (List Nat) := [[],[98,83],[32,99],[32,48,80,96],[48,101],[48,82,96,32],[80,50],[80,98,48,50],[96,32,50,83],[96,82]]
+def g109D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x57d4d10
+def g109D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0xc1a0fd20fd10
+def g109H5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x8
+def g109D6 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x23440bf
+def g109H6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x25fe0093000000520031000000000000000000200000000026000000bb970000000000000000000000006a0000000000000000)
+def g109L : Nat → Packing
+  | 4 => (1,2,3,0,0,0,0,g109D4)
+  | 5 => (2,1,3,0,0,4,0,g109D5)
+  | 6 => (1,0,3,0,0,0,0,g109D6)
+  | _ => emptyPacking
+def g109I : Nat → Nat → Option (Nat × Nat)
+  | 5 => lookupWord 1 2 0 4 0 0 g109H5
+  | 6 => lookupWord 2 53 0 8 1 3 g109H6
+  | _ => fun _ => none
+def g109 : Forest := ⟨109,6,fun i => g109Y[i]?.getD (0,0),g109C,g109A,g109L,g109I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g109P4_0 : block g109 4 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g109B4 : block g109 4 0 1=true := g109P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g109P5_0 : block g109 5 0 2=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g109B5 : block g109 5 0 2=true := g109P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g109P6_0 : block g109 6 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g109B6 : block g109 6 0 1=true := g109P6_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g109T : checkedTables g109 6 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g109 0 0 0 = true)
+  · exact (rfl : block g109 1 0 0 = true)
+  · exact (rfl : block g109 2 0 0 = true)
+  · exact (rfl : block g109 3 0 0 = true)
+  · exact g109B4
+  · exact g109B5
+  · exact g109B6
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g109G : graphValid g109 (boundsBefore K103) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low109 : Lower true (varsX 109) (qG_ 109) 7 := lower_forest (g:=g109) (i:=0) (hints:=33555715) (before_sound K103 V103) g109G g109T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K109 := extendKnown K103 7 [(109,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V109 : Known true K109 := extend_ok (m:=109) V103 low109 (by decide +kernel)
+def g115Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xc003ff0ffc3ffc00ffffffffc02b3e79000fc0)),(BitVec.ofNat 152 (0x90a80a204890a92a4291204088292e194d34d3))),((BitVec.ofNat 152 (0xfffc000fffffffff003ff0fffec8a9d703f03f)),(BitVec.ofNat 152 (0x2304c411002300c13004209020009d3145145))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xfffffff0003fffffffc000fffd77e88afc003f)),(BitVec.ofNat 152 (0x4c090026104c030040584120172a00828a28a))),((BitVec.ofNat 152 (0x3fffffffffff00012697f4000fc0)),(BitVec.ofNat 152 (0x2702e08b822702409826009c110691e4b2cb2c))),((BitVec.ofNat 152 (0xffffffffffc0000000000000039d530dfff000)),(BitVec.ofNat 152 (0x3803000c00380380e03808e0208d5204c30c30))),(0x0,0x0),(0x0,0x0)]
+def g115C : List ColumnInfo := [(0,1,82,32,5)]
+def g115A : List (List Nat) := [[],[100],[65],[65,97],[97,65],[97],[80],[80,100],[80,65],[80,65,97],[80,97,65],[80,97]]
+def g115D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x3f
+def g115L : Nat → Packing
+  | 5 => (1,0,1,0,0,0,0,g115D5)
+  | _ => emptyPacking
+def g115I (_ _ : Nat) : Option (Nat × Nat) := none
+def g115 : Forest := ⟨115,5,fun i => g115Y[i]?.getD (0,0),g115C,g115A,g115L,g115I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g115P5_0 : block g115 5 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g115B5 : block g115 5 0 1=true := g115P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g115T : checkedTables g115 5 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g115 0 0 0 = true)
+  · exact (rfl : block g115 1 0 0 = true)
+  · exact (rfl : block g115 2 0 0 = true)
+  · exact (rfl : block g115 3 0 0 = true)
+  · exact (rfl : block g115 4 0 0 = true)
+  · exact g115B5
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g115G : graphValid g115 (boundsBefore K109) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low115 : Lower true (varsX 115) (qG_ 115) 6 := lower_forest (g:=g115) (i:=0) (hints:=16842821) (before_sound K109 V109) g115G g115T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K115 := extendKnown K109 6 [(115,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V115 : Known true K115 := extend_ok (m:=115) V109 low115 (by decide +kernel)
+def g167Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xffc00ffc07fe03fffe00ffc0ffff447d401c7)),(BitVec.ofNat 152 (0xa0a86a128d0a458a0546a129a2929043d49249))),((BitVec.ofNat 152 (0xfffff00007fffc07ffff0000ff81386ac0e00)),(BitVec.ofNat 152 (0xc5314c5b162c89132984c5b2c324d386adb6db))),((BitVec.ofNat 152 (0xfffffffff8000007ffffffff0000be8947038)),(BitVec.ofNat 152 (0x1c0701c180f0e1c0e0701c303c709e0949249))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xf0000000000000007fffffffffffe6fe67803f)),(BitVec.ofNat 152 (0x601806020301020300806000400061c212492))),(0x0,0x0),((BitVec.ofNat 152 (0xffffffffffffffff8000000000001911bbffc0)),(BitVec.ofNat 152 (0x8020080004000004010080008000000024924))),(0x0,0x0)]
+def g167C : List ColumnInfo := [(1,0,166,0,5)]
+def g167A : List (List Nat) := [[],[32]]
+def g167D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x3f
+def g167L : Nat → Packing
+  | 5 => (1,0,1,0,0,0,0,g167D5)
+  | _ => emptyPacking
+def g167I (_ _ : Nat) : Option (Nat × Nat) := none
+def g167 : Forest := ⟨167,5,fun i => g167Y[i]?.getD (0,0),g167C,g167A,g167L,g167I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g167P5_0 : block g167 5 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g167B5 : block g167 5 0 1=true := g167P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g167T : checkedTables g167 5 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g167 0 0 0 = true)
+  · exact (rfl : block g167 1 0 0 = true)
+  · exact (rfl : block g167 2 0 0 = true)
+  · exact (rfl : block g167 3 0 0 = true)
+  · exact (rfl : block g167 4 0 0 = true)
+  · exact g167B5
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g167G : graphValid g167 (boundsBefore K115) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low167 : Lower true (varsX 167) (qG_ 167) 6 := lower_forest (g:=g167) (i:=0) (hints:=1397) (before_sound K115 V115) g167G g167T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K167 := extendKnown K115 6 [(167,[]),(171,[48,82,32]),(199,[16,101])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V167 : Known true K167 := extend_ok (m:=167) V115 low167 (by decide +kernel)
+def g173Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xfe1ff00ff87f87ffc07fff8fffd8b95000f0ff)),(BitVec.ofNat 152 (0x1440a0a0510110028505012008488941111111))),(0x0,0x0),((BitVec.ofNat 152 (0x1ffff0007ff87fff807ff1fc2b1e600f0f00)),(BitVec.ofNat 152 (0x5882c0c1620a010b06160a0411291e43333333))),((BitVec.ofNat 152 (0x1fffffff80007fffff8001ff941fb0f0000f)),(BitVec.ofNat 152 (0x610b0505802c222c08182c48a01416b6666666))),(0x0,0x0),((BitVec.ofNat 152 (0xffe000000000007ffffffffe000be4bf000ff0)),(BitVec.ofNat 152 (0x800c06060430443010203000c20260b4444444))),(0x0,0x0),((BitVec.ofNat 152 (0xffffffffffffff8000000000006442cffff000)),(BitVec.ofNat 152 (0x100808004000402040400100000008888888))),(0x0,0x0)]
+def g173C : List ColumnInfo := [(1,0,172,0,5),(4,0,169,0,5),(8,0,165,0,5),(32,0,141,0,5)]
+def g173A : List (List Nat) := [[],[80,50]]
+def g173D6 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x4e09f
+def g173L : Nat → Packing
+  | 6 => (1,0,2,0,0,0,0,g173D6)
+  | _ => emptyPacking
+def g173I (_ _ : Nat) : Option (Nat × Nat) := none
+def g173 : Forest := ⟨173,6,fun i => g173Y[i]?.getD (0,0),g173C,g173A,g173L,g173I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g173P6_0 : block g173 6 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g173B6 : block g173 6 0 1=true := g173P6_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g173T : checkedTables g173 6 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g173 0 0 0 = true)
+  · exact (rfl : block g173 1 0 0 = true)
+  · exact (rfl : block g173 2 0 0 = true)
+  · exact (rfl : block g173 3 0 0 = true)
+  · exact (rfl : block g173 4 0 0 = true)
+  · exact (rfl : block g173 5 0 0 = true)
+  · exact g173B6
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g173G : graphValid g173 (boundsBefore K167) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low173 : Lower true (varsX 173) (qG_ 173) 7 := lower_forest (g:=g173) (i:=0) (hints:=1283) (before_sound K167 V167) g173G g173T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K173 := extendKnown K167 7 [(173,[]),(203,[96,33,16,49,83]),(205,[96,32,50,83]),(214,[16,67,117,101]),(218,[16,50,66,117,101]),(229,[32,99,67]),(230,[32,16,83,67,100]),(233,[48,82,96,66,64]),(236,[32,16,49,81,65,100])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V173 : Known true K173 := extend_ok (m:=173) V167 low173 (by decide +kernel)
+def g211Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xffc01ffff0fffc00ff0ff0ff0c8957c00f000)),(BitVec.ofNat 152 (0x22a9549452202a8aa0a212222288157c777777))),((BitVec.ofNat 152 (0xffffe01fff0fffff000ffffff2c761b0f00ff)),(BitVec.ofNat 152 (0x4030181804020300c0c4040040080613111111))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xffffffe0000ffffffff000fff33b526000f0f)),(BitVec.ofNat 152 (0x88c0602118448c23090098488032b104aaaaaa))),(0x0,0x0),((BitVec.ofNat 152 (0xf00000000000fffffffffff000134bf8f00ff0)),(BitVec.ofNat 152 (0x30180c06088300c0200200304014868444444))),((BitVec.ofNat 152 (0xffffffffffff00000000000000cea8c5fff000)),(BitVec.ofNat 152 (0xc0201018000c0300c08c08c0846a080888888))),(0x0,0x0)]
+def g211C : List ColumnInfo := [(0,1,82,128,5),(1,0,210,0,5),(16,0,195,0,5),(2,0,209,0,4),(64,0,147,0,4),(128,1,82,0,4)]
+def g211A : List (List Nat) := [[],[97]]
+def g211D4 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x5bd4931
+def g211D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0xc8404fd31
+def g211H5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x50
+def g211D6 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x232a8bf
+def g211H6 (j : Nat) : Nat := if 1 ≤ j then 0 else 0
+def g211L : Nat → Packing
+  | 4 => (1,2,3,0,0,0,0,g211D4)
+  | 5 => (1,1,3,0,0,0,0,g211D5)
+  | 6 => (1,0,3,0,0,0,0,g211D6)
+  | _ => emptyPacking
+def g211I : Nat → Nat → Option (Nat × Nat)
+  | 5 => lookupWord 1 2 0 4 0 0 g211H5
+  | 6 => lookupWord 1 2 0 4 0 0 g211H6
+  | _ => fun _ => none
+def g211 : Forest := ⟨211,6,fun i => g211Y[i]?.getD (0,0),g211C,g211A,g211L,g211I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g211P4_0 : block g211 4 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g211B4 : block g211 4 0 1=true := g211P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g211P5_0 : block g211 5 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g211B5 : block g211 5 0 1=true := g211P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g211P6_0 : block g211 6 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g211B6 : block g211 6 0 1=true := g211P6_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g211T : checkedTables g211 6 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g211 0 0 0 = true)
+  · exact (rfl : block g211 1 0 0 = true)
+  · exact (rfl : block g211 2 0 0 = true)
+  · exact (rfl : block g211 3 0 0 = true)
+  · exact g211B4
+  · exact g211B5
+  · exact g211B6
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g211G : graphValid g211 (boundsBefore K173) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low211 : Lower true (varsX 211) (qG_ 211) 7 := lower_forest (g:=g211) (i:=0) (hints:=16842823) (before_sound K173 V173) g211G g211T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K211 := extendKnown K173 7 [(211,[]),(217,[64,49,33,118]),(242,[80,32,50]),(244,[64,33,16,49,83,118])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V211 : Known true K211 := extend_ok (m:=211) V173 low211 (by decide +kernel)
+def g213Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0x7ff003ffffe03ffff001ff80ffc0069abc81c0)),(BitVec.ofNat 152 (0x12a5a94a2a458a12a2d4251a148b029aacb6db))),(0x0,0x0),((BitVec.ofNat 152 (0x7ffffc00ffffc07ffffe0000fffff8da038e07)),(BitVec.ofNat 152 (0x4c1306c0c891304c098362c19124892039249))),(0x0,0x0),((BitVec.ofNat 152 (0x7fffffff0000007fffffffff00000ff10e0038)),(BitVec.ofNat 152 (0x4701c0708f0e1c4708e138309e1c0fd10a5b6d))),(0x0,0x0),((BitVec.ofNat 152 (0x800000000000007fffffffffffff99af6d703f)),(BitVec.ofNat 152 (0x1806018030102018030040002000102c242492))),((BitVec.ofNat 152 (0xffffffffffffff800000000000006754f2ffc0)),(BitVec.ofNat 152 (0x60080200c00000600c018040c0202540504924))),(0x0,0x0)]
+def g213C : List ColumnInfo := [(1,0,212,0,5)]
+def g213A : List (List Nat) := [[],[64,118]]
+def g213D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x3f
+def g213L : Nat → Packing
+  | 5 => (1,0,1,0,0,0,0,g213D5)
+  | _ => emptyPacking
+def g213I (_ _ : Nat) : Option (Nat × Nat) := none
+def g213 : Forest := ⟨213,5,fun i => g213Y[i]?.getD (0,0),g213C,g213A,g213L,g213I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g213P5_0 : block g213 5 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g213B5 : block g213 5 0 1=true := g213P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g213T : checkedTables g213 5 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g213 0 0 0 = true)
+  · exact (rfl : block g213 1 0 0 = true)
+  · exact (rfl : block g213 2 0 0 = true)
+  · exact (rfl : block g213 3 0 0 = true)
+  · exact (rfl : block g213 4 0 0 = true)
+  · exact g213B5
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g213G : graphValid g213 (boundsBefore K211) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low213 : Lower true (varsX 213) (qG_ 213) 6 := lower_forest (g:=g213) (i:=0) (hints:=33949191) (before_sound K211 V211) g213G g213T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K213 := extendKnown K211 6 [(213,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V213 : Known true K213 := extend_ok (m:=213) V211 low213 (by decide +kernel)
+def g227Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xffc01ff87fc3fff00ffff1ffed2e680007c1f)),(BitVec.ofNat 152 (0x222894451108808a4a0a02444252268a5294a5))),((BitVec.ofNat 152 (0xffffe0007ffc3ffff00ffffe11773400f83e0)),(BitVec.ofNat 152 (0x40b018162050082c0c2c140089146346318c63))),(0x0,0x0),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xffffffff80003ffffff001ffce8f541f0001f)),(BitVec.ofNat 152 (0x84c12098026111301030588900a8d154a5294a))),((BitVec.ofNat 152 (0xf0000000000003ffffffffe0005f98fe0003e0)),(BitVec.ofNat 152 (0x701c0e0438221c06040600e104b9898c6318c))),((BitVec.ofNat 152 (0xfffffffffffffc000000000003280bbffffc00)),(BitVec.ofNat 152 (0x8020100040002008080801000000021084210))),(0x0,0x0)]
+def g227C : List ColumnInfo := [(1,0,226,0,5),(2,0,225,0,5),(32,0,195,0,5),(64,0,163,0,5),(33,0,194,0,4),(66,0,161,0,4)]
+def g227A : List (List Nat) := [[],[97],[16,101],[16,80,96],[80],[80,97],[96,16,81],[96,81]]
+def g227D4 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x31825f63547409bd89544426d6215110)
+def g227D5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xc110204810001882188201141080d176bcc8d018160c02faa3a07bd4940bfa8a81fb40502fea8885f95110beaa2217c54443f280885bd4940)
+def g227H5 (j : Nat) : Nat := if 1 ≤ j then 0 else (189208 * 1000000000000000000 + 253964038873192720)
+def g227D6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x3140cc503540a0380ff40fd40fd10)
+def g227H6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xd4f4400e18d31640021400003c7f1000c2000000000034200143f0400a0000585c9002571)
+def g227D7 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x1605f
+def g227H7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xc4005e51200000000000e10307400003c4012a00003a400000010254000020000005)
+def g227L : Nat → Packing
+  | 4 => (3,3,3,0,0,4,0,g227D4)
+  | 5 => (10,2,3,0,0,7,0,g227D5)
+  | 6 => (3,1,3,0,0,6,0,g227D6)
+  | 7 => (1,0,3,0,0,0,0,g227D7)
+  | _ => emptyPacking
+def g227I : Nat → Nat → Option (Nat × Nat)
+  | 5 => lookupWord 1 11 0 8 2 2 g227H5
+  | 6 => lookupWord 4 29 1 10 4 2 g227H6
+  | 7 => lookupWord 3 31 1 9 2 3 g227H7
+  | _ => fun _ => none
+def g227 : Forest := ⟨227,7,fun i => g227Y[i]?.getD (0,0),g227C,g227A,g227L,g227I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227P4_0 : block g227 4 0 3=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g227B4 : block g227 4 0 3=true := g227P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227P5_0 : block g227 5 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227P5_1 : block g227 5 1 9=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=1)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g227B5 : block g227 5 0 10=true := (@block_merge g227 5 0 1 9 g227P5_0 g227P5_1)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227P6_0 : block g227 6 0 3=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g227B6 : block g227 6 0 3=true := g227P6_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227P7_0 : block g227 7 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g227B7 : block g227 7 0 1=true := g227P7_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227T : checkedTables g227 7 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g227 0 0 0 = true)
+  · exact (rfl : block g227 1 0 0 = true)
+  · exact (rfl : block g227 2 0 0 = true)
+  · exact (rfl : block g227 3 0 0 = true)
+  · exact g227B4
+  · exact g227B5
+  · exact g227B6
+  · exact g227B7
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g227G : graphValid g227 (boundsBefore K213) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low227 : Lower true (varsX 227) (qG_ 227) 8 := lower_forest (g:=g227) (i:=0) (hints:=16777317) (before_sound K213 V213) g227G g227T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K227 := extendKnown K213 8 [(227,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V227 : Known true K227 := extend_ok (m:=227) V213 low227 (by decide +kernel)
+def g63Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xfffffffffffffffffffb944e4fa4fd6803f03f)),(BitVec.ofNat 152 (0x282a00a128028520214b844c0320dc00145145))),((BitVec.ofNat 152 (0xffff000003fffff000076ab5eb70a632000fc0)),(BitVec.ofNat 152 (0x14c280db0a02642066762344a50a4324d34d3))),((BitVec.ofNat 152 (0xfffffffffc000000000067c4351bd4f7fc0000)),(BitVec.ofNat 152 (0xb27002c9c00b37804b8026c43508d4f33cf3cf))),((BitVec.ofNat 152 (0xfffffffffffffffffff58b1674957bf000003f)),(BitVec.ofNat 152 (0xc380b30e02cc38048c040b12749523f0ebaeba))),((21453 * 1000000000000000000 + 254836694424752064),(BitVec.ofNat 152 (0xfc00c3f0030fc008f00088cbb5a9420cb2cb2c))),((68276 * 1000000000000000000 + 774967573781409792),(BitVec.ofNat 152 (0xfc0003f0000f000451028857220cc30c30))),(0x0,0x0),(0x0,0x0),(0x0,0x0)]
+def g63C : List ColumnInfo := [(0,2,45,16,5)]
+def g63A : List (List Nat) := [[],[65],[80,50],[80,65,50]]
+def g63D5 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7f
+def g63L : Nat → Packing
+  | 5 => (1,0,1,0,0,0,0,g63D5)
+  | _ => emptyPacking
+def g63I (_ _ : Nat) : Option (Nat × Nat) := none
+def g63 : Forest := ⟨63,5,fun i => g63Y[i]?.getD (0,0),g63C,g63A,g63L,g63I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g63P5_0 : block g63 5 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g63B5 : block g63 5 0 1=true := g63P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g63T : checkedTables g63 5 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g63 0 0 0 = true)
+  · exact (rfl : block g63 1 0 0 = true)
+  · exact (rfl : block g63 2 0 0 = true)
+  · exact (rfl : block g63 3 0 0 = true)
+  · exact (rfl : block g63 4 0 0 = true)
+  · exact g63B5
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g63G : graphValid g63 (boundsBefore K227) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low63 : Lower true (varsX 63) (qG_ 63) 6 := lower_forest (g:=g63) (i:=0) (hints:=66883) (before_sound K227 V227) g63G g63T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K63 := extendKnown K227 6 [(63,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V63 : Known true K63 := extend_ok (m:=63) V227 low63 (by decide +kernel)
+def g95Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0x1ffffffffffffffffdd22222ff857c000001f)),(BitVec.ofNat 152 (0x2d14154509514290851d222027b017ab5ad6b5))),((BitVec.ofNat 152 (0xffffff80001ffff8003adda05ba07880007fe0)),(BitVec.ofNat 152 (0x4800a6006d80132019ba19a04a007086318c63))),((BitVec.ofNat 152 (0x1ffffffffe0000000033421e54bfc800f8000)),(BitVec.ofNat 152 (0x705938164e059bc12e023421654bfc9ef7bdef))),((BitVec.ofNat 152 (0x1ffffffffffffffffcc58e7684e4f41f0001f)),(BitVec.ofNat 152 (0x8061c01870061c02300058c3484e4854a5294a))),((BitVec.ofNat 152 (0xfe000000000000000004579a17773c3e0003e0)),(BitVec.ofNat 152 (0x7e001f8007e003c004441215770c18c6318c))),(0x0,0x0),((243983 * 1000000000000000000 + 393810807020059648),(BitVec.ofNat 152 (0x1800060001800040001820c80800121084210))),(0x0,0x0),(0x0,0x0)]
+def g95C : List ColumnInfo := [(4,0,91,0,7)]
+def g95A : List (List Nat) := [[],[65]]
+def g95D7 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7f
+def g95L : Nat → Packing
+  | 7 => (1,0,1,0,0,0,0,g95D7)
+  | _ => emptyPacking
+def g95I (_ _ : Nat) : Option (Nat × Nat) := none
+def g95 : Forest := ⟨95,7,fun i => g95Y[i]?.getD (0,0),g95C,g95A,g95L,g95I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g95P7_0 : block g95 7 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g95B7 : block g95 7 0 1=true := g95P7_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g95T : checkedTables g95 7 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g95 0 0 0 = true)
+  · exact (rfl : block g95 1 0 0 = true)
+  · exact (rfl : block g95 2 0 0 = true)
+  · exact (rfl : block g95 3 0 0 = true)
+  · exact (rfl : block g95 4 0 0 = true)
+  · exact (rfl : block g95 5 0 0 = true)
+  · exact (rfl : block g95 6 0 0 = true)
+  · exact g95B7
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g95G : graphValid g95 (boundsBefore K63) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low95 : Lower true (varsX 95) (qG_ 95) 8 := lower_forest (g:=g95) (i:=0) (hints:=16844355) (before_sound K63 V63) g95G g95T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K95 := extendKnown K63 8 [(95,[]),(126,[80,50]),(159,[64,16,49,118]),(190,[64,33,49,80,118])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V95 : Known true K95 := extend_ok (m:=95) V63 low95 (by decide +kernel)
+def g111Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xffffffffffffffffffd961ba3aa853c00003ff)),(BitVec.ofNat 152 (0x28802a402520148051921322280139294a529))),((BitVec.ofNat 152 (0x1ffff00007fffc003eda224bb248800f8000)),(BitVec.ofNat 152 (0x54c294c15b60a99099be58224b32488e739ce7))),((BitVec.ofNat 152 (0x1ffffffff8000000073423e149fc81f07c00)),(BitVec.ofNat 152 (0x2700270013800de02e0230236108f486318c63))),((BitVec.ofNat 152 (0x1fffffffffffffffc858e56c4e4f7e00001f)),(BitVec.ofNat 152 (0xb80338019c00ce01300058c14c4a4c4c6318c6))),(0x0,0x0),((BitVec.ofNat 152 (0xffe00000000000000004579a17773c00007fe0)),(BitVec.ofNat 152 (0xc013c009e004f001c0044688147708294a5294))),((243983 * 1000000000000000000 + 393810807020027904),(BitVec.ofNat 152 (0x1c000e000700020001821c808501318c6318))),(0x0,0x0),(0x0,0x0)]
+def g111C : List ColumnInfo := [(2,0,109,0,7)]
+def g111A : List (List Nat) := [[],[80,50]]
+def g111D7 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7f
+def g111L : Nat → Packing
+  | 7 => (1,0,1,0,0,0,0,g111D7)
+  | _ => emptyPacking
+def g111I (_ _ : Nat) : Option (Nat × Nat) := none
+def g111 : Forest := ⟨111,7,fun i => g111Y[i]?.getD (0,0),g111C,g111A,g111L,g111I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g111P7_0 : block g111 7 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g111B7 : block g111 7 0 1=true := g111P7_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g111T : checkedTables g111 7 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g111 0 0 0 = true)
+  · exact (rfl : block g111 1 0 0 = true)
+  · exact (rfl : block g111 2 0 0 = true)
+  · exact (rfl : block g111 3 0 0 = true)
+  · exact (rfl : block g111 4 0 0 = true)
+  · exact (rfl : block g111 5 0 0 = true)
+  · exact (rfl : block g111 6 0 0 = true)
+  · exact g111B7
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g111G : graphValid g111 (boundsBefore K95) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low111 : Lower true (varsX 111) (qG_ 111) 8 := lower_forest (g:=g111) (i:=0) (hints:=16778595) (before_sound K95 V95) g111G g111T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K111 := extendKnown K95 8 [(111,[]),(125,[65])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V111 : Known true K111 := extend_ok (m:=111) V95 low111 (by decide +kernel)
+def g119Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xffffffc0003fffc00ad27ec6ac340000000fc0)),(BitVec.ofNat 152 (0x25104a90da9094856ac27ec2a03404d34d34d3))),((BitVec.ofNat 152 (0x3ffffffffffffff720988afa71b000fc003f)),(BitVec.ofNat 152 (0x98213021302190243209888e801a145145145))),((BitVec.ofNat 152 (0x3fffffffc0000009cd1cb9421e203f03f000)),(BitVec.ofNat 152 (0x4e009c009c00de0b88441cb8421c20c30c30c3))),(0x0,0x0),((BitVec.ofNat 152 (0x3ffffffffffffffa162d5a1393dfc000003f)),(BitVec.ofNat 152 (0x7004e004e004e00c081625121312128a28a28a))),((BitVec.ofNat 152 (0xffc00000000000000915e285ddcf000003ffc0)),(BitVec.ofNat 152 (0x27002700270010011180051dc30b2cb2cb2c))),((BitVec.ofNat 152 (0x4ea977125e06ffffc0000)),(BitVec.ofNat 152 (0x80380038003800200488024104e04c30c30c30))),(0x0,0x0),(0x0,0x0)]
+def g119C : List ColumnInfo := [(1,0,118,0,7)]
+def g119A : List (List Nat) := [[],[65]]
+def g119D7 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7f
+def g119L : Nat → Packing
+  | 7 => (1,0,1,0,0,0,0,g119D7)
+  | _ => emptyPacking
+def g119I (_ _ : Nat) : Option (Nat × Nat) := none
+def g119 : Forest := ⟨119,7,fun i => g119Y[i]?.getD (0,0),g119C,g119A,g119L,g119I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g119P7_0 : block g119 7 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g119B7 : block g119 7 0 1=true := g119P7_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g119T : checkedTables g119 7 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g119 0 0 0 = true)
+  · exact (rfl : block g119 1 0 0 = true)
+  · exact (rfl : block g119 2 0 0 = true)
+  · exact (rfl : block g119 3 0 0 = true)
+  · exact (rfl : block g119 4 0 0 = true)
+  · exact (rfl : block g119 5 0 0 = true)
+  · exact (rfl : block g119 6 0 0 = true)
+  · exact g119B7
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g119G : graphValid g119 (boundsBefore K111) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low119 : Lower true (varsX 119) (qG_ 119) 8 := lower_forest (g:=g119) (i:=0) (hints:=16844101) (before_sound K111 V111) g119G g119T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K119 := extendKnown K111 8 [(119,[]),(123,[80,50])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V119 : Known true K119 := extend_ok (m:=119) V111 low119 (by decide +kernel)
+def g175Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xfffffffffffffffffff83ab722001c3fc01d4e)),(BitVec.ofNat 152 (0x29014005401280290298083422492444402948))),((BitVec.ofNat 152 (0xff800fffe0003fff800ee9901800e00020e17f)),(BitVec.ofNat 152 (0xb22a65298adb15324ccee99019fffdddc0617f))),((BitVec.ofNat 152 (0xfffffffc0000004485df40703c0070875)),(BitVec.ofNat 152 (0x3c13804e009c01bc17004855b4db6cccc20a55))),((BitVec.ofNat 152 (0xfffffffffffffe319cb82380003c80fb7)),(BitVec.ofNat 152 (0xc05c06700ce019c0180311cb81b6d9998006b7))),(0x0,0x0),((BitVec.ofNat 152 (0xfffff0000000000000047738edc003fc3000ba)),(BitVec.ofNat 152 (0x6007800f001e0060043708492491112044a2))),(0x0,0x0),((129962 * 1000000000000000000 + 219234010589033153),(BitVec.ofNat 152 (0x8001000200000000000000002221c9000))),(0x0,0x0)]
+def g175C : List ColumnInfo := [(2,0,173,0,7),(1,0,174,0,6),(4,0,171,0,6),(8,0,167,0,6),(32,0,143,0,6),(0,2,45,128,5),(3,0,172,0,5),(6,0,169,0,5),(9,0,166,0,5),(12,0,163,0,5),(34,0,141,0,5),(36,0,139,0,5),(11,0,164,0,4),(128,0,45,0,4),(128,2,45,0,4)]
+def g175A : List (List Nat) := [[],[80,50]]
+def g175D3 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x6304c865085585504826832642ac2a82419818750f5150120)
+def g175D4 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x8e080000000000009820000002684100043820000000000000000401f4f4773a1c4dc6b32184bc5b2c154a44f26114843f1e0e45c2b140843c1b0c054240f060240c0300235e0d70d85528d584dcd60d4635e0d70995218e7825d36154239e0976d45409e180dc5544826961075585209c5831d56148361dd143585209a7845db5148271e0d76d45208e7865d35148278e1170d4520dc3835c3514837050d70d4520b298419550482d260c65541209c88750d50483c25514354120b60855855048398d956154120d8b7550d40483625d54350120f81435c540482e8e116150120f8143585404827861f5150120ba184d4540483e050f51501208b7845db5148235e0d76d45209e3805cb514827860275485208e7825d265442a56126550d109d08750d50443c45514354110)
+def g175H4 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x940000d80000000900000)
+def g175D5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x181000000000000000007021c10000000000e093040040804c10e080d08041da051da04000000cc10002608001304090087a6106a61004c1040001810e0800004c1000000000012000a98200000c040640a004703801800d1054024e1700f1dc5f11c2f05bfef9bcee6b82dab52ceb22c2af2b6ac2aaa9297a2a849fa789ca6c99a59932468e63389a1984dff7add7745cb715bf6c9ac6999964d8d6017a5b5595153f4ad2547d12414ff3e4f3398e0368d4338c8308bc2a09b2548f2247c1d8691704f108350a01b0026fb9ac1a94f570d85529eee0b16a33ddd160d476bb9ac1a8cf77258351baee6b06a33d5c265486f3b82a490cef72593509bae9b1aa1b5dc7635427aba6c2a84f572d8550daec7b0aa1b5d8f515436bb1a42a84ef72595409eaeda8a817c5c3515039caa2a0a05e571d9520b5ee8b2a4173dcd65482f3b8aca905ad7419520b9ae632a41795c465482f2b8ec8905e970d51209deecaa2413b1d954482f3b8aa8907cb7050d20bc8eab0a41b9d956148372b2ac2905e77458520f8a86b0a4179ddb51482f2bb6a2905e574d4520f8a87a8a41f85c351483b5b2aa0907686554120bd6e8a8241dad5150483b4aa2a0907cb7354120f9286a8241f8dc550483f0b0aa0907e35154120bd6eaa02417a5d540483d5b2280907a95450120fc2e2a0241f858540483f1a8a80904bf74595209bee6b2a417a5c352482f3b8aa4905eb70549209eaeda8a41795cb51482f8b86a2905e67548520dceca90a41b959521483f090aa0904f574995109eae532a2179dc9544436abb286886d66550d10f2aa8a1a21f4dc143443b8aa2a0887d37354110fa286a822135dcd60d46f0b86a2907894350120)
+def g175H5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xf3781c00680609e780000063000000381dbe00085d8d023e2b8ca90000e300481292800000000943c5400000ab344fc72a3000880cd00693855ac79c1b0a32f8b5a24c1d28006977800000048200087c0009d001724c1c08e4994c0004253692011d20)
+def g175D6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x608070868010a08018a09a38498a10401c1807042860067020821e010a0046d000668d18719c38628010a18400850c10a09c0840a01a00a89a01a89840a02848281a0584a028060a010a08018a20600880212070430e10b10472780420c91c18c7054802d621acb619ac0549b5867163870e01002d01a14561a7160a422e83d01c4850185810185810a0858f40741a13741c1a6dcc1d0d9c19031c1cc29612624647a8d11421f426835039fe3ea7a4ee9d13906e4d81aa348660c91862e85a0af9532944f89792623a450858fc1e039c6c0cc1862dc558a212c2283c06c0c0150228390600900c00c000bf58352fdd8552bfd8152fd58b51fd54b51fd58351bf59350bf58b50bfd9150dfd5150df55150f7d8d50bfd8950fdd8550fdd4550fd48550bfd9540bf59540fd58540fdd4540fe54140fbd9520fb99520fb59520fb19520fbd9120fb59120fbd5120fb55120bfd9520bf59520fbd4920fb54920fd58520fdd4520fe54120fd55110fd54910bdd8552bd58b51bd58351bd99521f954921b7d8d50bdd8550f9d4720f350d20f958520f9d4520fa54120fa50120f948520bd99510bd59110f550d10bd58910fc54110)
+def g175H6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xe9f30bc4eb3c04600000000000000084900000000000000084d000000000000000353000000a13000000c36000d2864a93bf09a0482bf0ac2083933d340719199db5548000000286000000000000000d520000000000001342266b8585db711600028a00022c227000000000000000bc2000000000000000000883a1e00000049e00000000000000013e24c000c06937000000000000e87000000000000047000000418000000000fc400051200000054b00800000000000000000052d000000000f3a000454a38000000000000000000000000000e32000000a2a0001b4b9b000c2211b00001da4f030000a2500000000000042f0000004a500031a8210003410000000000000000006510000000000007a300000000000000061ce45000000000000000000000000e8900000f000505d23f31000000000f3f00069c000000e00000207000000000aaca0df2ee15000601000210942e4400000000013300000041100050c0007af000803000000000000602000000000000000000155b5000000000000024300000071700010e51f429f24514388235304180019010015150700008200)
+def g175D7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x14c16e15c14c162905043857105040ae82d023a0858990377815d14ace2c10b0c54820476d061230f96d2ed428734124681a007fd4bfaa5ff50fea87f503fa41f751fa90fbc83da41f510)
+def g175H7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x31a46508f91336000518002ab00e4a808ee4000002b57ef5320000000033600000000a2a31000000b282bc0000011629348156f1c0018c3b19005d3ea00000000000000b6eab0000000015cc00000000a1400000000000002cb0006c0007340124495065db708340040345c074000009a1e4c00128000003e7d0881521b935810000028b800000858007a7aeb0300060425bca42400000169400000000000ce05c26b14710c9f105879e160f001ccc3302c80027a2100283040a)
+def g175D8 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x9b8013f
+def g175H8 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xa1014008a0034b0e31eb80001307302400ba9a803303300000400064003c7e10066609100401)
+def g175L : Nat → Packing
+  | 3 => (3,5,4,0,0,4,0,g175D3)
+  | 4 => (37,4,4,0,0,9,0,g175D4)
+  | 5 => (86,3,4,0,0,10,0,g175D5)
+  | 6 => (57,2,4,0,0,11,0,g175D6)
+  | 7 => (11,1,4,0,0,9,0,g175D7)
+  | 8 => (1,0,4,0,0,0,0,g175D8)
+  | _ => emptyPacking
+def g175I : Nat → Nat → Option (Nat × Nat)
+  | 4 => lookupWord 1 17 0 6 2 0 g175H4
+  | 5 => lookupWord 11 67 5 11 6 1 g175H5
+  | 6 => lookupWord 27 271 4 12 7 1 g175H6
+  | 7 => lookupWord 18 127 5 11 6 1 g175H7
+  | 8 => lookupWord 5 31 5 9 4 1 g175H8
+  | _ => fun _ => none
+def g175 : Forest := ⟨175,8,fun i => g175Y[i]?.getD (0,0),g175C,g175A,g175L,g175I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P3_0 : block g175 3 0 3=true := by
+  apply cellsBlock (ar:=4) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g175B3 : block g175 3 0 3=true := g175P3_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P4_0 : block g175 4 0 37=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=3)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g175B4 : block g175 4 0 37=true := g175P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P5_0 : block g175 5 0 3=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P5_3 : block g175 5 3 83=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=4)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g175B5 : block g175 5 0 86=true := (@block_merge g175 5 0 3 83 g175P5_0 g175P5_3)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P6_0 : block g175 6 0 19=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=2)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P6_19 : block g175 6 19 38=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=3)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g175B6 : block g175 6 0 57=true := (@block_merge g175 6 0 19 38 g175P6_0 g175P6_19)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P7_0 : block g175 7 0 5=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P7_5 : block g175 7 5 6=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g175B7 : block g175 7 0 11=true := (@block_merge g175 7 0 5 6 g175P7_0 g175P7_5)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175P8_0 : block g175 8 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g175B8 : block g175 8 0 1=true := g175P8_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175T : checkedTables g175 8 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g175 0 0 0 = true)
+  · exact (rfl : block g175 1 0 0 = true)
+  · exact (rfl : block g175 2 0 0 = true)
+  · exact g175B3
+  · exact g175B4
+  · exact g175B5
+  · exact g175B6
+  · exact g175B7
+  · exact g175B8
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g175G : graphValid g175 (boundsBefore K119) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low175 : Lower true (varsX 175) (qG_ 175) 9 := lower_forest (g:=g175) (i:=0) (hints:=1395) (before_sound K119 V119) g175G g175T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K175 := extendKnown K119 9 [(175,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V175 : Known true K175 := extend_ok (m:=175) V119 low175 (by decide +kernel)
+def g183Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xfffffffe0003fff801d61939a64a20000f83e0)),(BitVec.ofNat 152 (0x489402540da81290ad541930a24a20c6318c63))),((BitVec.ofNat 152 (0xfc00fffffffffffffe600516ffc95801f0001f)),(BitVec.ofNat 152 (0x902610982130432048600412fe40514a5294a5))),((BitVec.ofNat 152 (0xfffffffc00000139c4f2134e803e007c00)),(BitVec.ofNat 152 (0xe13804e009c01bc1711184b2134e00c6318c63))),(0x0,0x0),((BitVec.ofNat 152 (0xffffffffffffff428bea0b99e80000001f)),(BitVec.ofNat 152 (0x1c0a7014e029c0181028be80199aeb5ad6b5a))),((BitVec.ofNat 152 (0xffff0000000000000122fa117cb687c0007fe0)),(BitVec.ofNat 152 (0x38007000e002002260014c908318c6318c))),(0x0,0x0),((742129 * 1000000000000000000 + 573845209073025024),(BitVec.ofNat 152 (0x200c001800300040088024c00210421084210))),(0x0,0x0)]
+def g183C : List ColumnInfo := [(1,0,182,0,7)]
+def g183A : List (List Nat) := [[],[32]]
+def g183D7 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7f
+def g183L : Nat → Packing
+  | 7 => (1,0,1,0,0,0,0,g183D7)
+  | _ => emptyPacking
+def g183I (_ _ : Nat) : Option (Nat × Nat) := none
+def g183 : Forest := ⟨183,7,fun i => g183Y[i]?.getD (0,0),g183C,g183A,g183L,g183I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g183P7_0 : block g183 7 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g183B7 : block g183 7 0 1=true := g183P7_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g183T : checkedTables g183 7 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g183 0 0 0 = true)
+  · exact (rfl : block g183 1 0 0 = true)
+  · exact (rfl : block g183 2 0 0 = true)
+  · exact (rfl : block g183 3 0 0 = true)
+  · exact (rfl : block g183 4 0 0 = true)
+  · exact (rfl : block g183 5 0 0 = true)
+  · exact (rfl : block g183 6 0 0 = true)
+  · exact g183B7
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g183G : graphValid g183 (boundsBefore K175) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low183 : Lower true (varsX 183) (qG_ 183) 8 := lower_forest (g:=g183) (i:=0) (hints:=66885) (before_sound K175 V175) g183G g183T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K183 := extendKnown K175 8 [(183,[])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V183 : Known true K183 := extend_ok (m:=183) V175 low183 (by decide +kernel)
+def g207Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0x7ffc01ffffffffffffc035677a50000f000f)),(BitVec.ofNat 152 (0xd01482c82a425214829c035454a5555555555))),((BitVec.ofNat 152 (0x7ffffffff0007ffc00f354385e8000f000f0)),(BitVec.ofNat 152 (0x5615914814c1b60990ccf304385e8333333333))),((BitVec.ofNat 152 (0xff800001ffffff80000026278cbf400f000f00)),(BitVec.ofNat 152 (0x9819e2702701380de17026078c3f4333333333))),((BitVec.ofNat 152 (0x1fffffffffffe580f6a35b0f000f00f)),(BitVec.ofNat 152 (0xe01e03803801c00e0180180a2a358222222222))),(0x0,0x0),(0x0,0x0),((BitVec.ofNat 152 (0xfffffffe00000000000024f859c3ef0000fff0)),(BitVec.ofNat 152 (0x200000c0060030020000f041802444444444))),((7591 * 1000000000000000000 + 16750954317807616),(BitVec.ofNat 152 (0x400001000800400000000000000888888888))),(0x0,0x0)]
+def g207C : List ColumnInfo := [(2,0,205,0,7)]
+def g207A : List (List Nat) := [[],[33]]
+def g207D7 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x7f
+def g207L : Nat → Packing
+  | 7 => (1,0,1,0,0,0,0,g207D7)
+  | _ => emptyPacking
+def g207I (_ _ : Nat) : Option (Nat × Nat) := none
+def g207 : Forest := ⟨207,7,fun i => g207Y[i]?.getD (0,0),g207C,g207A,g207L,g207I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g207P7_0 : block g207 7 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g207B7 : block g207 7 0 1=true := g207P7_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g207T : checkedTables g207 7 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g207 0 0 0 = true)
+  · exact (rfl : block g207 1 0 0 = true)
+  · exact (rfl : block g207 2 0 0 = true)
+  · exact (rfl : block g207 3 0 0 = true)
+  · exact (rfl : block g207 4 0 0 = true)
+  · exact (rfl : block g207 5 0 0 = true)
+  · exact (rfl : block g207 6 0 0 = true)
+  · exact g207B7
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g207G : graphValid g207 (boundsBefore K183) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low207 : Lower true (varsX 207) (qG_ 207) 8 := lower_forest (g:=g207) (i:=0) (hints:=16778851) (before_sound K183 V183) g207G g207T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K207 := extendKnown K183 8 [(207,[]),(222,[64,33,49,118]),(238,[80,50,64])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V207 : Known true K207 := extend_ok (m:=207) V183 low207 (by decide +kernel)
+def g215Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xfe007ffe0007ffe00a64598b000700004cc0fd)),(BitVec.ofNat 152 (0xa44b12545b514a456a44598b3bbb777700c0fd))),((BitVec.ofNat 152 (0xfffffffffffffffff783e1e0807800ff11023d)),(BitVec.ofNat 152 (0xc812009802600c82478281808889111100401c))),((BitVec.ofNat 152 (0x7ffffff8000001dc843307800f00220c5f)),(BitVec.ofNat 152 (0xf09c04e013806f0381d48433199b3333000a1f))),(0x0,0x0),((BitVec.ofNat 152 (0x7ffffffffffff214f06d8000f00fbc3287)),(BitVec.ofNat 152 (0xe047011c047004001470655556aaaaac0a83))),(0x0,0x0),((BitVec.ofNat 152 (0xffff800000000000011b0b1f7800fff0c03de8)),(BitVec.ofNat 152 (0x180060018008000908082220444440a160))),((BitVec.ofNat 152 (0xce43e807fff0000ffc112)),(BitVec.ofNat 152 (0x1006001800600100020220044448888bb0000))),(0x0,0x0)]
+def g215C : List ColumnInfo := [(1,0,214,0,7),(4,0,211,0,7),(0,1,86,128,6),(2,0,213,0,6),(16,0,199,0,6),(3,0,212,0,5),(4,1,82,128,5),(5,0,210,0,5),(17,0,198,0,5),(18,0,197,0,5),(64,0,151,0,5),(128,0,86,0,5),(128,1,86,0,5),(6,0,209,0,4),(65,0,150,0,4),(68,0,147,0,4),(132,0,82,0,4)]
+def g215A : List (List Nat) := [[]]
+def g215D4 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x120224040000000000000000d99b05184f1b305490f182430300b0d821915454ec56046455153d477454d514867121d5350521d457554d41487c15515350521da374505604863a60772593508eb825db43d423ae0976d07508eb825d941d423661b73507508eb8759121d42b8e116148750ae18650521d43a85914148750)
+def g215D5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x62058818c040000000000620400308100000000101040708103c20b08108049010090100b01240402c0490124010800d04901022414207048010d64070c0000000000000001810190100181640490b38038b052c1b0abcadab0aaaa4a5a889ea749ba6898a5c95a5090a3c8da2888a1c85a10829fc7b9e0729bc6b9a06698c619785a964559484c92c47910428f4398d82e8b42b8a82889c25890228841f8701a85c158480e81c038009bee6b0ca93b5c762552e7b92c8a9dd77159153b9ae4322a7755c46454f8fb22a8a9f1c6455153e9ee4aa2a757dc55454e77b92cba1e5d6554f439dee4b2a873ddc56550f2fb2aa6a1e5f6454d51eaee2a9aa33bdc965d072eb2aa7a0f1d5454f419bee6b2a833bdc9655066ebaec6a0ed970d8d419bceca9a83371d9535072eb2aa6a0f1d5454d41e6aa8a8a83d554d515076db1ac0a0de57199121b9ee6b2243795c65448677bb2a890f4d5454d21f8ee2a9a4379dd151487b2aa2a290de77550521bcaeaa0a43e995141487d2aa28290fc77350521f8aa6a0a43f85c141486f5ba2c090eea6458121fc282b0243badc964d427db8ac9a84f976d0f509f6e8b0ea13e5db41d435cb2683a84f97650750d72c8a0ea176dcd41d4378b0a83a86e97648750dd2c890ea1f850521d42edb9a82a06ea7648540fc28290a81d154d5148675b92c9a86e16148750)
+def g215H5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xf8fa5200914f0000950070270000930600de8c346df97b78)
+def g215D6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x202001800704c0c1010018b0889008890048d1214020b088d121403044689008890090c5820018c0810404040090a00b0c2020018304040082c104002063020404007081170a006101000c2020200407082840c2090f0062e1c2802421410e921432081606890043c6a4448050681606806ac0c102002052020801c9200782604130e018204c380643170c3c01a483821ac146e012b041b804861e48d582611616116a4342a65868f08e1822180a6609606b3560a8b4aa844f49a528a404658950da0a3f97bcef1d7b9b70edb1afb44652c1d79adf588a89472734b09110da003ca760e91c53626acc817c2b44c48b0ed1962c04707a0be11011000bf58e54bf58654bfd8d54fbd8954bfd8554f7d9153f799153f759153f719153f7d8553f758553bfd9153df55153bf59743f754f43bfd9543bf59543f754d43bfd9151df55151bf59741ef55341f754f41bfd9541bf59541ef95141ef55141f7d8d41f754d41fd54541fe58141fb59521fb99121fb59121fb95121fb55121fed0f50fe50f50fed0750fe50750fe50d40fe50540bbd8954d755153d754d51b7d8d41f354d21f954521f950521fa58121be59350be58750fa48750bed8540fa48540)
+def g215H6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x618361cffd1000f78e5000209f65cbc00000750000006a7000002c90000006b35d80037d6d08ba1f000003900c2f2be0ba0d2551b05800083000000c2a1d25420194cb79166400272d0000015c00018000000000000884d1b01000000038000358d80058ca10cd54980071f8f74c89ee860015999145c002120000018380010a34c0015c8000000029893ac360199580000147000000cad0621011a000150)
+def g215D7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x40e084a3062840e084c18a82130914b0a180a2462ca8602452a08493052c286024a1822ca86024682130910482384c14136c80916984b0c02a984c145849304ea6ab0d5c9c451d4c0511f8b4420f003fca9fd54fea9ffd0ffa87fd51ffa0ff507bca7dd53f690fed43f281f910)
+def g215H7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x20d298000000000000000000019d1d000c8800003d23d40000000003540031100000000f100132000000000000000000000000004000000000000000000000000000000000000000000000000971af7a000000000000000125001230001300000000000000000000002200034200000002f03a40000000e140060c000000000157000000000000000000000000000344207d60038e73c000000007dd86a800a2de45224a000000000000000000000000000000000000011e00000003550020c0016d7cc87000000000000309003da000000000000000000000000000000f002b000000000051800000002b0b6c64003bb5b00167000e10000000000000000000000000003208420)
+def g215D8 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x6242013f
+def g215H8 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x99a8000005d03006c2b804e1100fcd5804680000052004900)
+def g215L : Nat → Packing
+  | 4 => (16,4,5,0,0,7,0,g215D4)
+  | 5 => (68,3,5,0,0,10,0,g215D5)
+  | 6 => (55,2,5,0,0,11,0,g215D6)
+  | 7 => (14,1,5,0,0,9,0,g215D7)
+  | 8 => (1,0,5,0,0,0,0,g215D8)
+  | _ => emptyPacking
+def g215I : Nat → Nat → Option (Nat × Nat)
+  | 5 => lookupWord 4 23 2 8 4 0 g215H5
+  | 6 => lookupWord 17 109 4 11 7 0 g215H6
+  | 7 => lookupWord 13 211 2 10 6 0 g215H7
+  | 8 => lookupWord 3 23 5 8 4 0 g215H8
+  | _ => fun _ => none
+def g215 : Forest := ⟨215,8,fun i => g215Y[i]?.getD (0,0),g215C,g215A,g215L,g215I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P4_0 : block g215 4 0 16=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=2)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g215B4 : block g215 4 0 16=true := g215P4_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P5_0 : block g215 5 0 3=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P5_3 : block g215 5 3 65=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=4)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g215B5 : block g215 5 0 68=true := (@block_merge g215 5 0 3 65 g215P5_0 g215P5_3)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P6_0 : block g215 6 0 13=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=1)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P6_13 : block g215 6 13 42=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=3)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g215B6 : block g215 6 0 55=true := (@block_merge g215 6 0 13 42 g215P6_0 g215P6_13)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P7_0 : block g215 7 0 6=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P7_6 : block g215 7 6 8=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=1)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g215B7 : block g215 7 0 14=true := (@block_merge g215 7 0 6 8 g215P7_0 g215P7_6)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215P8_0 : block g215 8 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g215B8 : block g215 8 0 1=true := g215P8_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215T : checkedTables g215 8 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g215 0 0 0 = true)
+  · exact (rfl : block g215 1 0 0 = true)
+  · exact (rfl : block g215 2 0 0 = true)
+  · exact (rfl : block g215 3 0 0 = true)
+  · exact g215B4
+  · exact g215B5
+  · exact g215B6
+  · exact g215B7
+  · exact g215B8
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g215G : graphValid g215 (boundsBefore K207) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low215 : Lower true (varsX 215) (qG_ 215) 9 := lower_forest (g:=g215) (i:=0) (hints:=16844359) (before_sound K207 V207) g215G g215T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+def K215 := extendKnown K207 9 [(215,[]),(250,[80,50,32])]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem V215 : Known true K215 := extend_ok (m:=215) V207 low215 (by decide +kernel)
+def g219Y : Array (Bits × Bits) := #[((BitVec.ofNat 152 (0xc007ffffe0ffff4214900003f000000fd4759f)),(BitVec.ofNat 152 (0x8a510a20422440400492ad555555555554558e))),((BitVec.ofNat 152 (0xfff800ffffffe014ce8000fc0000fff00a49f8)),(BitVec.ofNat 152 (0x602c02800082048600630c30c30c30c248b8))),(0x0,0x0),((BitVec.ofNat 152 (0xffffff0000ffffa110381f00003f000fc38e7b)),(BitVec.ofNat 152 (0x80300b040900a010094228a28a28a2828a71))),((BitVec.ofNat 152 (0xffffffffff0000860de800000fc003f02c1067)),(BitVec.ofNat 152 (0x2304408c008e048208ed94b2cb2cb2cb2c9043))),(0x0,0x0),((BitVec.ofNat 152 (0x992347e0000ffffc00301f84)),(BitVec.ofNat 152 (0xc018030083008190102084104104104100504))),((BitVec.ofNat 152 (0x6ae02ffffff00000003fe000)),(BitVec.ofNat 152 (0x300600c010c010026024108208208208292000))),(0x0,0x0)]
+def g219C : List ColumnInfo := [(1,0,218,0,7),(2,0,217,0,7),(8,0,211,0,7),(16,0,203,0,7),(64,0,155,0,7),(128,0,91,0,7),(0,1,82,136,6),(0,16,137,66,6),(2,16,137,64,5),(3,0,216,0,5),(8,1,82,128,5),(9,0,210,0,5),(17,0,202,0,5),(64,16,137,2,5),(80,0,139,0,5),(128,1,82,8,5),(129,0,90,0,5),(10,0,209,0,4),(19,0,200,0,4),(25,0,194,0,4),(66,0,137,0,4),(66,16,137,0,4),(72,0,147,0,4),(82,0,137,0,4),(130,0,89,0,4),(136,0,82,0,4),(136,1,82,0,4),(137,0,82,0,4)]
+def g219A : List (List Nat) := [[],[64,49,118]]
+def g219D5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x101000b6785b3060336d8f7054941d3554dc9515078d5915454521f2554509514878d5955450521f255454941487cce055454540)
+def g219D6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x1800206000860542050401a04000605c54315040c30400600081c0c2001c180c0041505085411504541421a04685421523020c101040454442a36008015058c542140d636110007c40b181454304a7a11a1058546831a150aaea62829d26e9825a952368a2228520e7e1e2771b6681926116e5814a4b11e440fa390de340ba2508e1e05a0d0160027eb96c2aa4fd72d9151beee2b22a3dddc5545467eba6c4a8e7d54d8951e7aa8a12a33fdc9655077bb8acaa0fb77155141e7aa8a92837edc152506fbb92a2a0cfd75d91219feeab22433fdd9544867ebb2a890ebd6455121beee8a8a43bdd91514877ab22a290f755454521fca84a8a437d5d5414877bb2a8290ef56550521f6aa8a0a43f954941486efb9a82a87bb7155140f72e2aa281ee5c542502efb9a82904dd75d8d41e6aa8a8a83ce55151503d4a1242a07195454d40)
+def g219H6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x940000d6a1730000000072fac54000ac000d)
+def g219D7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x52a11846543308ca8664c111e8110c68c152c2434064a0858a11108d20c68a910c7070c1a320183462c30714302005450c080182a2988e9c7c14831b0e1019a303180c080172a3464a543311929510b860a00a9118b1184182802e54836608a3106862e45323c108a8e6ca8454d848d40a883c5345422a6820e0e20a803c6cb8b0410f1064b109078718d342173411a2a116c38c69a1650c868d70ee0cbf778eeb1c8b766b6cc984ad95529e52f23c418738cf1672a64fc8b1021dc2f8470730a20f414800ffd8554ff58554ff59151ff58951ff50951ff54941ff59121ff55121ff50d50ff50550ff50520bfd8554bfd9151df55151bfd8951bf59541ef55141fd54541bfd9121bf59121fd54521fd50521fe54640fe48640fed8540fe54540fe48540bfd8540b7d8d41f694e40ee55140f694d40f654d40ee50940)
+def g219H7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x65400000aa20000000093580400000c49e7c000000000000000000000390023001684c49cd0018000000000064b468460000000000080fb2c00690000000000000000000000091c000000000000004c9d40000000000000000000000000f30000007220280000000028800000000e0dc9800d282088b69d61776800000c8200000000000c33cf41800000182000b3600000000000a3f4b8000000000000000082342d86000002e80a50000028e14e1c004005c)
+def g219D8 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x228603e33451086019238a03c81495c60e58a05474429648c880a04991240a10d8e100428f1cc34a2049213d31088ca24f14d8e10046c600d8e111a1b556e9f409c8b44b1e0a82a007f553faa3fd41fe90ff543fa81fd30fe907f443f481f940)
+def g219H8 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x145400000000000a7491294e70007c0e8e0000064d00026c00000b3eb6e2b7510000000000000000000000c86000000000000000000092f080000000000000061d001a0c007600000000000013c0020b68200000240800000002c7800208002a7f420000014481800000000000000000000003a40004a00003400000261001c200071300000000000d24000c5e54f0b867c700020fb3206000001a3603000000e28002100000000070000000000221108000001900802)
+def g219D9 (j : Nat) : Nat := if 1 ≤ j then 0 else 0xa4188201bf
+def g219H9 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x2460048000000083ba800000055913e50000001f50000066000000000008c00242c00001800000000000007c9200000288000000000004400320000000007c8000000000000000000000008)
+def g219L : Nat → Packing
+  | 5 => (7,4,5,0,0,6,0,g219D5)
+  | 6 => (38,3,5,0,0,10,0,g219D6)
+  | 7 => (34,2,5,0,0,11,0,g219D7)
+  | 8 => (11,1,5,0,0,9,0,g219D8)
+  | 9 => (1,0,5,0,0,0,0,g219D9)
+  | _ => emptyPacking
+def g219I : Nat → Nat → Option (Nat × Nat)
+  | 6 => lookupWord 2 17 4 8 3 1 g219H6
+  | 7 => lookupWord 12 127 3 11 6 1 g219H7
+  | 8 => lookupWord 12 127 5 11 6 1 g219H8
+  | 9 => lookupWord 4 71 2 9 4 1 g219H9
+  | _ => fun _ => none
+def g219 : Forest := ⟨219,9,fun i => g219Y[i]?.getD (0,0),g219C,g219A,g219L,g219I⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P5_0 : block g219 5 0 7=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g219B5 : block g219 5 0 7=true := g219P5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P6_0 : block g219 6 0 1=true := by
+  apply cellsBlock (ar:=5) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P6_1 : block g219 6 1 4=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P6_5 : block g219 6 5 33=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=3)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g219B6 : block g219 6 0 38=true := (@block_merge g219 6 0 1 37 g219P6_0 (@block_merge g219 6 1 4 33 g219P6_1 g219P6_5))
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P7_0 : block g219 7 0 6=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P7_6 : block g219 7 6 17=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=2)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P7_23 : block g219 7 23 11=true := by
+  apply cellsBlock (ar:=8) (rows:=0) (d:=1)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g219B7 : block g219 7 0 34=true := (@block_merge g219 7 0 6 28 g219P7_0 (@block_merge g219 7 6 17 11 g219P7_6 g219P7_23))
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P8_0 : block g219 8 0 2=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P8_2 : block g219 8 2 9=true := by
+  apply cellsBlock (ar:=7) (rows:=0) (d:=1)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g219B8 : block g219 8 0 11=true := (@block_merge g219 8 0 2 9 g219P8_0 g219P8_2)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219P9_0 : block g219 9 0 1=true := by
+  apply cellsBlock (ar:=6) (rows:=0) (d:=0)
+  simp only [cells,boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+theorem g219B9 : block g219 9 0 1=true := g219P9_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219T : checkedTables g219 9 := by
+  intro k hk
+  interval_cases k
+  · exact (rfl : block g219 0 0 0 = true)
+  · exact (rfl : block g219 1 0 0 = true)
+  · exact (rfl : block g219 2 0 0 = true)
+  · exact (rfl : block g219 3 0 0 = true)
+  · exact (rfl : block g219 4 0 0 = true)
+  · exact g219B5
+  · exact g219B6
+  · exact g219B7
+  · exact g219B8
+  · exact g219B9
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem g219G : graphValid g219 (boundsBefore K215) = true := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem low219 : Lower true (varsX 219) (qG_ 219) 10 := lower_forest (g:=g219) (i:=0) (hints:=16842819) (before_sound K215 V215) g219G g219T (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior379 : Lower true (varsX 379) (qG_ 379) 10 := by
+  have h := lift_ok (u := true) (ms := ([96,97,99,100,101,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 379) (T := qG_ 379) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low219
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior506 : Lower true (varsX 506) (qG_ 506) 9 := by
+  have h := lift_ok (u := true) (ms := ([32,33,50,84,101]).map swapRows ++ fixRows 64 0)
+    (raw := varsX 506) (T := qG_ 506) (xs := [(inputs.getD 6 zero,2,66)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low227
+  have card : (([(inputs.getD 6 zero,2,66)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior443 : Lower true (varsX 443) (qG_ 443) 9 := by
+  have h := lift_ok (u := true) (ms := ([32,33,50,84,101]).map swapRows ++ fixRows 1 0)
+    (raw := varsX 443) (T := qG_ 443) (xs := [(inputs.getD 0 zero,8,9)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low227
+  have card : (([(inputs.getD 0 zero,8,9)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior442 : Lower true (varsX 442) (qG_ 442) 8 := by
+  have h := lift_ok (u := true) (ms := ([32,33,50,84,101]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 442) (T := qG_ 442) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low227
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior505 : Lower true (varsX 505) (qG_ 505) 8 := by
+  have h := lift_ok (u := true) (ms := ([112,66,115,117,118]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 505) (T := qG_ 505) (xs := [(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior499 : Lower true (varsX 499) (qG_ 499) 8 := by
+  have h := lift_ok (u := true) (ms := ([33,67,84]).map swapRows ++ fixRows 64 0)
+    (raw := varsX 499) (T := qG_ 499) (xs := [(inputs.getD 6 zero,1,65)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([(inputs.getD 6 zero,1,65)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior498 : Lower true (varsX 498) (qG_ 498) 7 := by
+  have h := lift_ok (u := true) (ms := ([32,50,83,100]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 498) (T := qG_ 498) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low211
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior497 : Lower true (varsX 497) (qG_ 497) 7 := by
+  have h := lift_ok (u := true) (ms := ([112,66,99,116,117]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 497) (T := qG_ 497) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior491 : Lower true (varsX 491) (qG_ 491) 8 := by
+  have h := lift_ok (u := true) (ms := ([16,99,100,101,118]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 491) (T := qG_ 491) (xs := [(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low211
+  have card : (([(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior475 : Lower true (varsX 475) (qG_ 475) 8 := by
+  have h := lift_ok (u := true) (ms := ([33,84,118]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 475) (T := qG_ 475) (xs := [(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior435 : Lower true (varsX 435) (qG_ 435) 7 := by
+  have h := lift_ok (u := true) (ms := ([33,67,84]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 435) (T := qG_ 435) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior411 : Lower true (varsX 411) (qG_ 411) 7 := by
+  have h := lift_ok (u := true) (ms := ([33,84]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 411) (T := qG_ 411) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior378 : Lower true (varsX 378) (qG_ 378) 7 := by
+  have h := lift_ok (u := true) (ms := ([32,82]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 378) (T := qG_ 378) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low91
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior377 : Lower true (varsX 377) (qG_ 377) 7 := by
+  have h := lift_ok (u := true) (ms := ([112,66,115,117,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 377) (T := qG_ 377) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low173
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior371 : Lower true (varsX 371) (qG_ 371) 7 := by
+  have h := lift_ok (u := true) (ms := ([112,65,117]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 371) (T := qG_ 371) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low211
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior363 : Lower true (varsX 363) (qG_ 363) 7 := by
+  have h := lift_ok (u := true) (ms := ([16,99,100,101,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 363) (T := qG_ 363) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low211
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior315 : Lower true (varsX 315) (qG_ 315) 7 := by
+  have h := lift_ok (u := true) (ms := ([96,97,99,100,101]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 315) (T := qG_ 315) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low91
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior504 : Lower true (varsX 504) (qG_ 504) 6 := by
+  have h := lift_ok (u := true) (ms := ([33,50,84,118]).map swapRows ++ fixRows 80 0)
+    (raw := varsX 504) (T := qG_ 504) (xs := [(inputs.getD 4 zero,64,80),(inputs.getD 6 zero,8,72)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 4 zero,64,80),(inputs.getD 6 zero,8,72)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior490 : Lower true (varsX 490) (qG_ 490) 6 := by
+  have h := lift_ok (u := true) (ms := ([33,50,84,118]).map swapRows ++ fixRows 66 0)
+    (raw := varsX 490) (T := qG_ 490) (xs := [(inputs.getD 1 zero,64,66),(inputs.getD 6 zero,2,66)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,64,66),(inputs.getD 6 zero,2,66)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior489 : Lower true (varsX 489) (qG_ 489) 6 := by
+  have h := lift_ok (u := true) (ms := ([16,67,101]).map swapRows ++ fixRows 192 0)
+    (raw := varsX 489) (T := qG_ 489) (xs := [(inputs.getD 6 zero,1,65),(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 6 zero,1,65),(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior488 : Lower true (varsX 488) (qG_ 488) 5 := by
+  have h := lift_ok (u := true) (ms := ([33,50,84,118]).map swapRows ++ fixRows 64 0)
+    (raw := varsX 488) (T := qG_ 488) (xs := [(inputs.getD 6 zero,8,72)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 6 zero,8,72)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior483 : Lower true (varsX 483) (qG_ 483) 6 := by
+  have h := lift_ok (u := true) (ms := ([16,84,118]).map swapRows ++ fixRows 66 0)
+    (raw := varsX 483) (T := qG_ 483) (xs := [(inputs.getD 1 zero,64,66),(inputs.getD 6 zero,1,65)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,64,66),(inputs.getD 6 zero,1,65)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior481 : Lower true (varsX 481) (qG_ 481) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,84,118]).map swapRows ++ fixRows 64 0)
+    (raw := varsX 481) (T := qG_ 481) (xs := [(inputs.getD 6 zero,1,65)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 6 zero,1,65)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior474 : Lower true (varsX 474) (qG_ 474) 6 := by
+  have h := lift_ok (u := true) (ms := ([]).map swapRows ++ fixRows 136 0)
+    (raw := varsX 474) (T := qG_ 474) (xs := [(inputs.getD 3 zero,64,72),(inputs.getD 7 zero,2,130)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 3 zero,64,72),(inputs.getD 7 zero,2,130)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior473 : Lower true (varsX 473) (qG_ 473) 6 := by
+  have h := lift_ok (u := true) (ms := ([16,67]).map swapRows ++ fixRows 144 0)
+    (raw := varsX 473) (T := qG_ 473) (xs := [(inputs.getD 4 zero,1,17),(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 4 zero,1,17),(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior467 : Lower true (varsX 467) (qG_ 467) 6 := by
+  have h := lift_ok (u := true) (ms := ([16]).map swapRows ++ fixRows 130 0)
+    (raw := varsX 467) (T := qG_ 467) (xs := [(inputs.getD 1 zero,16,18),(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,16,18),(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior466 : Lower true (varsX 466) (qG_ 466) 5 := by
+  have h := lift_ok (u := true) (ms := ([]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 466) (T := qG_ 466) (xs := [(inputs.getD 7 zero,2,130)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 7 zero,2,130)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior465 : Lower true (varsX 465) (qG_ 465) 5 := by
+  have h := lift_ok (u := true) (ms := ([16]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 465) (T := qG_ 465) (xs := [(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior459 : Lower true (varsX 459) (qG_ 459) 6 := by
+  have h := lift_ok (u := true) (ms := ([16,67]).map swapRows ++ fixRows 130 0)
+    (raw := varsX 459) (T := qG_ 459) (xs := [(inputs.getD 1 zero,64,66),(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,64,66),(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior457 : Lower true (varsX 457) (qG_ 457) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,67]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 457) (T := qG_ 457) (xs := [(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior441 : Lower true (varsX 441) (qG_ 441) 6 := by
+  have h := lift_ok (u := true) (ms := ([16,67,101]).map swapRows ++ fixRows 144 0)
+    (raw := varsX 441) (T := qG_ 441) (xs := [(inputs.getD 4 zero,1,17),(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 4 zero,1,17),(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior440 : Lower true (varsX 440) (qG_ 440) 5 := by
+  have h := lift_ok (u := true) (ms := ([33,50,84,118]).map swapRows ++ fixRows 16 0)
+    (raw := varsX 440) (T := qG_ 440) (xs := [(inputs.getD 4 zero,128,144)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 4 zero,128,144)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior433 : Lower true (varsX 433) (qG_ 433) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,118]).map swapRows ++ fixRows 32 0)
+    (raw := varsX 433) (T := qG_ 433) (xs := [(inputs.getD 5 zero,1,33)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 5 zero,1,33)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior427 : Lower true (varsX 427) (qG_ 427) 6 := by
+  have h := lift_ok (u := true) (ms := ([16,67,101]).map swapRows ++ fixRows 130 0)
+    (raw := varsX 427) (T := qG_ 427) (xs := [(inputs.getD 1 zero,128,130),(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,128,130),(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 2 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior425 : Lower true (varsX 425) (qG_ 425) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,67,101]).map swapRows ++ fixRows 128 0)
+    (raw := varsX 425) (T := qG_ 425) (xs := [(inputs.getD 7 zero,1,129)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 7 zero,1,129)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior419 : Lower true (varsX 419) (qG_ 419) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,84,118]).map swapRows ++ fixRows 2 0)
+    (raw := varsX 419) (T := qG_ 419) (xs := [(inputs.getD 1 zero,128,130)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,128,130)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior417 : Lower true (varsX 417) (qG_ 417) 4 := by
+  have h := lift_ok (u := true) (ms := ([16,84,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 417) (T := qG_ 417) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior409 : Lower true (varsX 409) (qG_ 409) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,67,118]).map swapRows ++ fixRows 16 0)
+    (raw := varsX 409) (T := qG_ 409) (xs := [(inputs.getD 4 zero,1,17)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 4 zero,1,17)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior403 : Lower true (varsX 403) (qG_ 403) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,118]).map swapRows ++ fixRows 2 0)
+    (raw := varsX 403) (T := qG_ 403) (xs := [(inputs.getD 1 zero,16,18)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,16,18)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior401 : Lower true (varsX 401) (qG_ 401) 4 := by
+  have h := lift_ok (u := true) (ms := ([16,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 401) (T := qG_ 401) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior395 : Lower true (varsX 395) (qG_ 395) 5 := by
+  have h := lift_ok (u := true) (ms := ([16,67,118]).map swapRows ++ fixRows 2 0)
+    (raw := varsX 395) (T := qG_ 395) (xs := [(inputs.getD 1 zero,128,130)])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([(inputs.getD 1 zero,128,130)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior393 : Lower true (varsX 393) (qG_ 393) 4 := by
+  have h := lift_ok (u := true) (ms := ([16,67,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 393) (T := qG_ 393) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low82
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior496 : Lower true (varsX 496) (qG_ 496) 4 := by
+  have h := lift_ok (u := true) (ms := ([16,65,98,115,101,118]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 496) (T := qG_ 496) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low45
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem prior482 : Lower true (varsX 482) (qG_ 482) 4 := by
+  have h := lift_ok (u := true) (ms := ([16,66,99,116,117]).map swapRows ++ fixRows 0 0)
+    (raw := varsX 482) (T := qG_ 482) (xs := [])
+    (by decide +kernel) (qP_ _ (by decide +kernel)) (qP_ _ (by decide +kernel)) low45
+  have card : (([] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 0 := by
+    decide +kernel
+  rw [card] at h
+  exact h
+def generatedKnown : List (Nat × Nat) := [(379,10),(506,9),(443,9),(442,8),(505,8),(499,8),(498,7),(497,7),(491,8),(475,8),(435,7),(411,7),(378,7),(377,7),(371,7),(363,7),(315,7),(504,6),(490,6),(489,6),(488,5),(483,6),(481,5),(474,6),(473,6),(467,6),(466,5),(465,5),(459,6),(457,5),(441,6),(440,5),(433,5),(427,6),(425,5),(419,5),(417,4),(409,5),(403,5),(401,4),(395,5),(393,4),(496,4),(482,4)]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem generatedPrior : Known true generatedKnown := by
+  intro e h
+  simp only [generatedKnown, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact prior379
+  · exact prior506
+  · exact prior443
+  · exact prior442
+  · exact prior505
+  · exact prior499
+  · exact prior498
+  · exact prior497
+  · exact prior491
+  · exact prior475
+  · exact prior435
+  · exact prior411
+  · exact prior378
+  · exact prior377
+  · exact prior371
+  · exact prior363
+  · exact prior315
+  · exact prior504
+  · exact prior490
+  · exact prior489
+  · exact prior488
+  · exact prior483
+  · exact prior481
+  · exact prior474
+  · exact prior473
+  · exact prior467
+  · exact prior466
+  · exact prior465
+  · exact prior459
+  · exact prior457
+  · exact prior441
+  · exact prior440
+  · exact prior433
+  · exact prior427
+  · exact prior425
+  · exact prior419
+  · exact prior417
+  · exact prior409
+  · exact prior403
+  · exact prior401
+  · exact prior395
+  · exact prior393
+  · exact prior496
+  · exact prior482
+def generatedSamples : Array (Bits × Bits) := #[(BitVec.ofNat 152 (0x7c03ce7f8001800383c1f82004c102610f33f), BitVec.ofNat 152 (0x40090100000028004804248000440022005115)),(BitVec.ofNat 152 (0x3800c0180001e007c003e004827061386ccdcc), BitVec.ofNat 152 (0xc17b15218882e809c94d6580825021282cc54c)),(BitVec.ofNat 152 0, BitVec.ofNat 152 0),(BitVec.ofNat 152 (0xc0070300780e007807c00388138089c18f0e0f), BitVec.ofNat 152 (0x8d04c608016409880c0cb0012800940850e0a)),(BitVec.ofNat 152 (0x38001f807007800003fc111c030e01f00ff0), BitVec.ofNat 152 (0x1a84e8401134019002929a0114010a01d00aa0)),(BitVec.ofNat 152 (0x3e00780000007fc0061e003f001fff000), BitVec.ofNat 152 (0xb726b00b3ba08323173b1021a003f0017aa000)),(BitVec.ofNat 152 (0x3ffc00000007fff800007e0003fffe000000), BitVec.ofNat 152 (0x2400029e664916663420007e0002d494000000)),(BitVec.ofNat 152 (0xffc0000007fff8000000007ffffc0000000000), BitVec.ofNat 152 (0x294444914442000005e49280000000000)),(BitVec.ofNat 152 0, BitVec.ofNat 152 0)]
+def generatedColumns : List ColumnInfo := [(128,0,379,0,10),(1,0,506,0,9),(64,0,443,0,9),(65,0,442,0,8),(2,0,505,0,8),(8,0,499,0,8),(9,0,498,0,7),(10,0,497,0,7),(16,0,491,0,8),(32,0,475,0,8),(72,0,435,0,7),(96,0,411,0,7),(129,0,378,0,7),(130,0,377,0,7),(136,0,371,0,7),(144,0,363,0,7),(192,0,315,0,7),(3,0,504,0,6),(17,0,490,0,6),(18,0,489,0,6),(19,0,488,0,5),(24,0,483,0,6),(26,0,481,0,5),(33,0,474,0,6),(34,0,473,0,6),(40,0,467,0,6),(41,0,466,0,5),(42,0,465,0,5),(48,0,459,0,6),(50,0,457,0,5),(66,0,441,0,6),(67,0,440,0,5),(74,0,433,0,5),(80,0,427,0,6),(82,0,425,0,5),(88,0,419,0,5),(90,0,417,0,4),(98,0,409,0,5),(104,0,403,0,5),(106,0,401,0,4),(112,0,395,0,5),(114,0,393,0,4),(11,0,496,0,4),(25,0,482,0,4)]
+def genData5 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xaa479848c180e38130b9260ba26488715173e01951cd42443868b9f00cb0e6a1221c15ed578658374c910c2af74bc32a1ba64886157b5ea5780dd324430abd4f4abc06e99221474ee573e007350910)
+def genData6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xa1060a8302052830501e83040528304966c084000000000450103c083e04100000000002c0820000000580a7830c0000000000000022c8200000000000006810400005300800781040000000000000002aac9f801907d07f003f80089f02c05383583f03f00702c05227f06f07e046c0fe0fc0fc0104fe07f03f00429f81fc1f8113e0020580a706f07e07e00d14620424810fb1e83ca788ef9dc3b2758e6dcab846e6db5b3b616b6d55a7b49670cc996326640be579aed5ceb856dad559eb2561abd558a995029a528a39442824f89d932a5f4b294d2123c46c8950fa1942683503a013f67d4f79e938466cc51371de2f445859090003dc1724c1744c910f6451d3050d72443d85435c9744c910f6150d2745132443d8543485744c910ef06513060a43443b92484c1435c910e74dcf809cd424439d173e007350910e55e95780dd324437c3924c1744c910df0691920dd034437c1974c2244c910de4689940dd03443555736547350910d355cd961cd424433e192e007350910cf4e61305d1324433d2984c1435c910cf4261305d1324433d0984c1435c910cec653801cd424433a994641829cd40cea6519060a43503373806547350910cbce01961cd424431eb92e418750d20c79261725d1324431d7a95e0374c910c75e4f9161d434431b648e5d435c910c6d9239150d72442fc3a2651304c910bf06883740d42442f91a40dd0350910bd4e95874c132442f51a50dd0350910bb46983740d42442dc5a41cd274c910af8e819460a43442be3a0651821cd10af4e8d8740f42442bd3a361d0350910af46a23740f42442bd1a88dd0350910af46a03740d42442bd1a48e1035c910af2e819460b344c2bb3a0649841cd10aea69182413314829d7a364580dc5439f4e89948dd034427d1a2e4d7440d109f16a637891324427c4a949d344c9109796a62784d215025d7a95cc73509108fce81985d1324423f1a9e0273509108fc6a7801cd424423f1a0e61435c9108fc68397611324423f1a0a61744c9108dde95985d1324422f7a6661744c91085fe95985d1324420ffa6661744c910ee092130891324435c07949d304c910cf0a61308913244315578654374c910c355e1960dd32442d85a41cd274c910b516947349d32442cc5a61cd274c910ae46933840d424421d7a95e0374c910)
+def genIndex6 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x786be2497f1e1a2af15881b)
+def genData7 (j : Nat) : Nat := if 4 ≤ j then 0 else (if j<2 then (if j<1 then (0x1844c9109fdc8306a12613f7985d1324427ef30a1ae4884fde5d844c9109fbca30e992213f79361f424427ef26c3a84884fde498750d109fbc9309b9a213f791611324427ed30ba264884fda61435c9109facc6e7a12213f598dcd424427eb3139a84884fd66213509109facc2e8992213f5985cf424427eb308a264884fd66073509109facbf08992213f597e09434427eb29c3a64884fd653835c9109faca702992213f593e11724427eb27c12e8884fd64b8750d109fac9706ba2213f592e05434427eb21c0a8690cfd261744c9109fa4c286b92213ed98493314827db25c0a86904ef66142cc5409deca702992811ff985d1324423ff30ba2429847fe6173505208ffcbb08992211ff9461d324423ff26c3a848847fe4d81dc9408ffc930f98a811ff9261d434423ff24c26e68847fe4984dc5308ffc9301b8a871ff9161d434823ff22c1ee4a047fe418750d218ffc830ea16631ff90613714ca3ff20c16e2a1c7fa61435c9108fecc6e6a12211fd98dcb315023fb31b9262a047f66174cc5208fecc2e8992211fd9850b714c23fb2fc0a869047f65f814c9408feca706b92211fd94e05734823fb27c22e48847f64f825d1108fec9706ba2211fd92e05744c23fb23c22e69047f647825d1308fec8f00ba2651fd90e05744cbf826112264887f049d304c910fe090a6099221f93474c143443f268298286887e451d3050d10fc8a0a60a1a21f893250143483f0a64a0a8690fc350d5255132ee239a4e99221bd33840f424437a67081a84886f48e1035c910de8c226121a21bd1804d3324437a27081e84886f44c3844c910de898704a1a21bd130613324437a260c2264886f44c18290d10dd4c1280a1a41ba648891324433acf11ba64886758e2735c910ceb1c426b92219d637e05324433aaf01ba64885f4e4d7440d10be8ca46e81a217d1940dd03442fa32742206885f464e7440d10be8c9c2881a217d1928dd03442fa3241ba06885f4643344c910be84ba60992217b190d1d43442f2b281ba64885e3e5123d0930baaca86e992216d5960dd32442be12e81ae48856d650735c910abaca8e6b92214f5961cd724427e720c2264884fca5f80509109f8cc4e881a213f193e01424427e321c3a86884fc643874c9109f8c8509b9a213f190a11734427e32141e84884fc64283509109f34c448992213cd92a0d424c276b2941a84884e765283509309bbcab0e9922137595a11734426eb2b422268847ba627448d208f6c9506ba2411bd94a0f7050a37b2941ae89045fe55874c910de09830521a21b91306133244371286c0048996e150d8109132d86a1b0a12265a8d43618244cb2aae6c28e6886355cd861cd10be0c906e81a21791940dd03442ea32a1ba06885b46583740d10aaaca86e89a214d5960dd134423af30b98e68841f65a859d131) else (0x878a1d4871a1bb06b41a68680199864c18c85c8157850812a04520fa03880ca02be09781f4062812a035007e0003fa726ba206887f48dd03d0910fe91ba06a1221fd1944c132443fa32498286887f461d3050d10fe8c3a6099221fd1474c143443fa260c2264887f44c18250d10fe8982e899221fd13050d72443fa260a1a24887f44c1344c910fe89822899221fd03740d42443f8c6f12264887f149d344c910fe291a2890a61fc5214d132443f5304a0286907ea5210448d20fd4a120998a41fa94241131483f5264a0286907e5e4d4750d10fcaa1ae899221f954345132443f2a829a242987e34d12350520fc69928690a81df17440d72443bcf24ba2e488779e497444910ef313c2690a81de5725d132443bca4e8a26488779485744c910eebb9ce6a1221dd63784d42443baae639a8488773e49744c930ee693a6899221dcd235d1214c3b6a8ea1ae48876d51d4344910edaa0a86b9221d9f9351d43443b3a86ba264887674d17350520e9fcaa8eaa265bf390611324437e70881ae4886fce037350910df9c04e6a1221bf3805cd424437e70039a84886fc66103d0910df8cc206a1221bf18740f424437e30e81a84886fc6118240d10df8c0a06a1221bf130611324437d720c1286906fa641829cd40df4c830521a81be982413314837cf24c3a84886f96518290d10df2ca30439a21bdb9060d424c37b260c2264886f5e4d8750d10de6ca3059a261bbb90611325037729082662906ed921435c910ddac930839a21bad9460a7350375b28c1486a06e78e1435c540dbbcab0e992219fb9061d434833ef22c3a8690e7de458750d10cfac8b01b8a879ef9760943c833df24c3a869067be498750910cf713f02992819ee2760d215033db2ec14e6a067b65d8290d40cf6c2300b94879ed28dcb315033bf26c3a868866f921435c910cbfcab0eaa26597f9561d32442fe724c2206885fce497440d10bf9c8308992217f39060943442fe32139a84885fc25d0350910bf5c830891a417e7925d172442fcf24ba264885f9e497444910bf2cbc48992217e5921cd42442fb720c2264985f6e41824d130bebc9ae8992217d79351d43442fab291ba64885f5650374c910be7c93009a2657cf925d1324c2f7720c1286a05ed6521348540bdaca0e6a12217779561d32442eef2ac1ae4885dd6547350910b7acb0e6a12215fb9061173482bf720c12e89857de5d435c910afbc8b06ba2215f7915d1214c2bef22a1ae48857d65e1348540afaca4e6b92215f59485d214c2beb2909ae48857d650735c910af7c9308b9a415ef9261172442bdf24c02e89957be49744c930af7c92e8992215ef925d1214c2bdf20c22e521d7b64e2748540af6c8c4e992815df93605744c2bbf26ba26488577652374c910adfca2e6a0a4157f9560d72442aff2ac0ae6904fee4)) else (if j<3 then (0x484548c0f01f0068481192303f0051701204448c1b03f0bc0201a0501232548c0f01f00806a1132548c0f01f00706a1132548c0f01f0070a81192106c0fc0185c154120444841b03f0bc0241404ac91230741983f008170911210781984a0fc0201a0509112583f0061709112307c1b83e07c0201605549a2383e07c01c9f1705524448c1f06e07c0245c1549113c48c1f06e0f8124113210781a83f006044c8c1f06e0f81f0070a81f044c8c1f06e07c0202a044cf32307c1b83e04896514c1d83607c0189424584a0fc0141a05c1484703f00616494a0fc0101460d81f0042450660d81f0050501132583f00505183607c010c8c1d0660d81f0063230760d81f00552207e0f81f00525088e0f81f00532307e0f81f00525088e0f81f00585a14c1f81f005850cbe07c0121432f04e07c01781f002e07c00b41f002e07c00b81f0021541404b491208660fc2607c0281404848c1d06d1583f0981f00a8284981e06817c2b07c0220a1260781a05f0fc2f07c0260a1260781a05b0bc1f00883a0a1260781a05f0fc2f06c0281f1701404f86a0ec2e07c0245c0501313f86e0fc2e06c0245c154120444841b03f0b01f00a1701204448c1b03f0b01f00907c5c048111230640dc2c07c0285c0481113c48c1b03f0b01700a0745c05813e198370b81f0090581313f86e0fc2e05c0205c05013e1b83f0b81f0088721b8631634249e2387e10c3f05c032b46acb2b1cabe2acaaa9aa78a92aa12a76a9b6a69a996a5ca94ea4fa92ea42a8f0a35a8a8a1ea860a16a840a0c280c9fa27d89efa7ae9e5278e9e2276e9d5273a9c5a7069c026f09baa6c69ab269299e265e996263e98ba628983a5fe97925d49712596961a56c954a538947a50493aa4d093024b0925a468913a43e90e241e8fc23d68f1a3b68e9a3968e1a36c8d9a34c8ca22fa8b5a2b28a62274891a22c887220c87f21ec87721b886a217a85aa1508502130848210683b20dc82e20a8823a074816a054813a0348041ff67f71fcc7f19fc07ec1f967e41f807dc1f607d19f367c99f167c19ef67b99ee07b69ed47b39eb47a69e8a79e9e6a7969e4078c1e207841e0077c1de07769dd47711db476b9d9e7661d9275e1d5e7561d527509d287461cfe7391cd47311caa7269c8a71c1c607119c407071c167041c006fe9bd66f41bc06ee9bb46e91b946e11b746db9b686d89b5c6d59b506d29b446cf9b386cc9b226c71b166c19b006be9af46b91ade6b61ad26b31ab26a89a926a09a7269b1a666959a466901a3a68a9a2468519b465298cc61d98165eb17385b8965a58115b855b1520537949251193fa4e9134e4be128e48b91ce463114a44210d0426104c4028fd23df0f263b68e8e3930dec3658d4033f8ca83170bfc2e70b5a2c38ab82988a2027a09a625e094a24488da22b086a20c87fa1f) else (0x2115202246060891049704a060c2b0681221844601424430509141e831118050915244172591550660451725915486604586c1441830681c1c11705541830761b4183320181c10681441c305106081441c21701921a81101945606a0442690708045486081d041b053060c1b81f060f060607a18251c105206080004741820510608144182458144183e04103810408741a41c351d060814c182053060907c1820014c182a1810259604285012470709590494055941983f00405c1069590918250246c94081a818246c940a5960428558108860486051521820a81b167c01059e042e041011460420745c053c01059e0428701a1818501e041e04106781080859c2082b06bc00c1d06c16f00407414f00307414b04306415082b06bc00c2a06c1af00411d060a14041a041a06c10548041d053c00e14042809823f004708185d060a1406590659051a2482868910981042a41fc00e140507f0022611408c8e04200086f06085c863c00d1bc18217306098504003060706e042030707810781042bf002f001c181f001c181c181c1810000000afc0082af002f001f001850151c1865c10a47051407c0070607060707040030707c00408501000863810a1be042000e041853060b060518e04246f810b8107810783f0020741e04146f810816041da182011bc1b810c0028604046e14e04301860400381078107810781040000000000000000b041000704100003060400000383f002e041a1c1c181c181000a1818501000a18101c1045c15512b254881e4560fc0241a15414848919210751683f00a06855052122464841d4561283a07c030148489152648a1a83f008050138489152686a0e81f0090745c052122454992286a0fc0285c460148489152648a1a83a07c02c5c85d159248661683f0080901d1701b86016456495208761684f00d4709512e0a5268590fc0202a1554881f83e07c01c942494932206a0fc01c1a2509232206a0fc01c9232206a0e81f0060681452686a0e81f0070501212106d1583f007250c881b45a0e81f0070685545112b250660fc0205c0691452086b1583f0080501212106d1583f0bc0205c96455452c941b4560d81f00a0681404b491208660fc2f009170194564921985a0e81f009154c981f83e07c0185524707e0f81f0060a8c8c1f83e07c0182a32383e07c0145524783e07c0141605248c1b83e07c01c1)))
+def genIndex7 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x144f8ef80f00036859b9395e928978000be0216f80e4be015e481500889601b340c4f4583b4496cfbc02b6993e031dec4f01843c031bf010a220f8048fe0195a2743fd23c0087998c27c0780f00e0853516b39e0250014f01e02c1d23f00463c06c5e594685bbc28528bfc0780f0085edc78af00a3344780f63e03c012a75de0347999f012c950a3f375e03c078012be03c008e18c50c1ac11f01e03cf284f01e03c07808e1517414032052c23e0)
+def genData8 (j : Nat) : Nat := if 11 ≤ j then 0 else (if j<5 then (if j<2 then (if j<1 then (0xe87d09309fe87d09109fe87cc5409fe878c5409fe87509309fe87509109fe874c5409fe870c5409fe83dc9409fe83dc1429fe839d1209fe835d1209fd87d0d109fd87d09309fd87d09109fd87d05309fd87cc9409fd87cc5409fd87cc5209fd87951329fd8794d429fd8790d209fd878d1309fd878c5409fd87885409fd87851109fd87551329fd8750f219fd8750f209fd8750e529fd8750d219fd8750d209fd8750d109fd8750b319fd8750b309fd87509109fd874cb419fd874cb409fd874c9109fd87491329fd870c5409fd84dd5329fd84dcd109fd84dc9309fd84dc9109fd84dc5329fd84dc5309fd84dc1329fd849cf209fd849cd209fd83dd5429fd83dc9409fd83dc5429fd83dc5409fd83dc1429fd839d3209fd839d1209fd82dd5439fd82dd1309fd82dd1109fd82dcd109fd82dc5439fd82dc5309fd82dc1439fd829cf409fd829cd409fd81dcd409fd81dc9409fd80dd1329fd80dcd419fd80dc9439fd80dc9419fd80dc5439fd80dc5329fd809d3319fd809d2319fd809d1319fd809d0319fd809cf429fd809cd42fd23740d10fd130cc910fd13090d10fd13050d10fd1304c910fd03740d10fa94241120f974390f10f974390d10f8d4309132f555345531de6819ca43de5819ca43dd7739cd10dd63784d10dd5731cd10dd43744d10dcf3748f21db9435c042db7749d110db64785110db5435c442dae4789132d9f474d332d9f3750c42d9e849cf21d9d849cf21d3d7550c42cbd7650c42bf3805d110bf3805cd10bf38050910bf28740d10bf183dc110bf180cc910bf1809d110bf1809cd10bf18090d10bf18010d10bf08740d10be98009132be68290f10be68290d10be6821cd10be68204d10be58290f10be58290d10be5821cd10be58204d10be58109132bce8309132bce82cd132bcd82cd130bb684ccb10bb684cc910bb6841cd10bb68404d10bb584ccb10bb584cc910bb5841cd10bb58404d10baf8250e42b9d84cc930b75851cd10b758504d10b6d8509132af5861cd10af58604d10aed86091329f9801cd519f9801c5539f88740d109f6819ca439f6819c9439f5819ca439f5819c9439ee87891329ee829cf419ee829cf409ee829ce549ee829cd549ee829cd419ee829cd409ee829c5409ee821cd519ee821cd109ee821c5539ed829cf419ed829cf409ed829ce549ed829cd549ed829cd419ed829cd409ed829c5409ed821cd519ed821cd109ed821c5539dc874d1329be849cf219be849cf209be849ce529be849cd529be849cd219be849cd209be841cd519be841cd109be841c5539bd849cf219bd849cf209bd849ce529bd849cd529bd849cd429bd849cd219bd849cd209bd841cd519bd841cd109bd841c5539bc8750d4197e859d13197d859d13197d851cd1097c8754d518fd861cd518fd861cd108fd861c553) else (0x50d20fb74750d10fb74150d10fb547d0d10fb54750d10fb541d0d10fb54150d21fb54150d10fae244c940f9d43d0530f9d4395132f9d4355132f9d4350530f9d34cc940f9d344cb41f9d344cb40f9d344c941f9d344c940f6d5255132f3d4550d52df9845c031df7745c910df77444910df6735c910df61748530df6135c910df574dc910df574c4910df5745c910df57444910df5345c632df514dc910df5145c910df5145c221df4735c910dee7448f20dee7448d20dee274c940dee2748540ded845ca43ded805ca43ded274c910ddf744c930ddf3750f20ddf3750d20ddf374cb40ddf374c940dde374c910ddd845cf21ddd74cc930ddd744cb30ddd744c930ddd3790d20ddd3750f21ddd3750f20ddd3750e52ddd3750e42ddd3750d20ddd374cb41ddd374cb40ddd34dc930ddd34dc132ddd345cb30ddd345c332dbd825d332dbd809d031dbd805d332dbd805d031dbd47d0d10dbd4795132dbd4755132dbd4750d10dbd474d232dbd4749332dbd43dc540dbd435c341bf98090d40bf98090540bf9808d130bf98085110bf9800c540bf78750d10bf7874c910bf7845c910bf7844c910bf7835d110bf7835c910bf78345110bf7825d110bf78250d10bf78245110bf78150d21bf78150d10bf7814c910bf687d0910bf68750910bf684dcd10bf684c4d10bf6849cd10bf68484d10bf6845cd10bf68444d10bf6841cd10bf68404d10bf683d0910bf68350910bf587d0d10bf587d0910bf5879d110bf58750d10bf58750910bf5874c910bf584dcd10bf584dc910bf584cc910bf584c4d10bf584c4910bf5849cd10bf58490d10bf58484d21bf58484d10bf5844cb10bf5844c910bf5841cd10bf58404d10bf583d0910bf5839d110bf58385110bf582dd110bf582dcd10bf5829cd10bf58290d10bf58284d10bf5821cd10bf581d0d10bf581d0910bf5819d110bf5819c943bf58185110bf58150d10bf58150910bf5814c910bf58084d21bef8448d20bee820c540bed82cc520bed829cd40bed829c540bed8290d42bed8290d40bed8290d20bed828d132bed8250f20bed8250d20bed820c540bed8089132bdf854d132bdf844c930bdf824d130bdf804d132bde83d0930bde8350930bdd84cd532bdd84cc930bdd83d0930bdd83d0530bdd839d130bdd8395132bdd838d132bdd838d130bdd8389132bdd8355132bdd8350b30bdd8350930bdd82cd130bdd80cd132bbf8250d40bbe84cc540bbe840c540bbd84cc940bbd84cc540bbd849cd40bbd849c540bbd8490d40bbd844cb40bbd844c940bbd840c540bbd83d0940b7d850c540afd860c5409ff8750f209ff8750d209ff874cb409ff874c9409ff855d1329ff845cd209ff845c9109ff835d1109ff835c9109ff825d1309ff825d1109ff815d1329ff815d1309ff815cd209ff805d1329f)) else (if j<3 then (0x5924f9247e241523b5235e22fe2295223521d52175210c20ac20551ff51f9e1f3e1ee71e901e271dc71d701d191cb01c501be71b7e1b1e1ab51a5e19fe19a71950190218ab184217e2178b171916b9166216021590151514a3144c13e3137a131a12ba124811df1188113110d1105f0fff0f9f0f510efa0e9a0e310dda0d7a0d1a0c9f0c360bd60b5b0afb0a9b0a3b09c9097b092d08cd085b07f2079b073206db0672062d05e80591051604a4044d03ed038d033602df0288021601a4014d00db00690000ff904cc520ff9044c520ff90350910ff7835d110ff7825d110ff773d0910ff77350910ff67350910ff61350910ff61348540ff58750d10ff5874c910ff5845c910ff5844c910ff5835d110ff5835c910ff5825d110ff58250d10ff5745c910ff5744c910ff57444910ff573d0910ff57350910ff54750d10ff5435c910ff54344910ff5344c910ff5145c910ff5144c910ff51448530ff51350910ff47350910fee245c132fed8448d20fed8250f20fed8250d20fed3250d20fed24cc520fed244c520fed2350520fed2348540fdd844c930fdd824d132fdd824d130fdd804d132fdd744c930fdd345c930fdd345c132fdd344c930fdd344c910fdd3448530fdd3250530fbd844cb40fbd844c940fbd8250d40fbd435c540fbd4350520fbd4348540fbd42cc540fbd424c540fbd344c940dff855d132dff835d110dff825d130dff825d110dff815d132dff815d130dff805d132dff7350910dff72cc540dff724c540dfd8750f20dfd8750d20dfd874cb40dfd874c940dfd855d132dfd845cd20dfd845c910dfd835d110dfd835c910dfd825d130dfd825d110dfd815d132dfd815d130dfd815cd20dfd805d132dfd74cc520dfd745c930dfd745c910dfd745c132dfd744c930dfd744c910dfd744c520dfd7448530dfd735c540dfd7350910dfd7350520dfd725c143dfd435c910dfd42dc530dfd425c331dfd3750d20bff835c540bff825d130bff825d110bff825c143bff815cd40bff8150d20bff814c940bff805d132bff805c943bfd87d0930bfd87d0910bfd87cc540bfd878c540bfd8750930bfd8750910bfd874c540bfd870c540bfd84cc520bfd844c910bfd844c520bfd8448530bfd8350930bfd8348540bfd82cc540ff3805d110ff3705d110ff28440d10ff27440d10ff21440d10ff18440d10ff18240d10ff17440d10ff130d0d10ff13050d10ff1304c910ff11440d10ff103d0910ff1035c910ff10350910ff10344910fe90448d20fe6244c910fe5274c910fe5214c910fe51448d21fd93050d10fd9304c910fd7344c910fd7318c540fd6374c910fd534cc910fd5344cb10fd5344c910fd4374c910fcf254d132fcd3290d20fcd3250f21fcd3250f20fcd3250d21fcd3250d20fcd254d132fcd23d0930fcd2348530fb94) else (if j<4 then (0x30b83c0303a5c0b0449187c361106c2c0f00c0ec2c90874240e05c1e0121d0b04c9f8b2461f0983c1705806058224f461230f86c260f858160181d099371788239130782e0b00bc2a6c297c276c243c219c1ddc1b3c192c168c147c11dc0e1c0a5c069c03fbffabfc7bf8bbf3dbf1cbed7bea4be7abe3ebe1dbdf3bdaebd60bd24bd0cbcd9bc9dbc6abc37bc0dbbd1bb95bb74bb65bb3bbb11badebab4ba81ba57ba24b9e8b9b5b982b958b940b90db8dab89eb86bb838b817b7f6b7d5b7c6b78ab772b751b730b70fb6f7b6dfb6b5b694b66ab649b628b607b5e6b5ceb5a4b583b559b538b4fcb4d2b49fb46cb44bb406b3e5b3c4b391b355b322b2f8b2d7b2bfb2a7b286b26eb256b235b214b1fcb1dbb1a8b17eb154b121b0f7b0d6b0b5b08bb061b037b016afecafcbafaaaf92af68af47af14aef3aed2aebaaea2ae81ae60ae36adcdad64ad0daca4ac32abdbab72ab09aaa0aa37a9bca941a8cfa854a7d9a75ea6fea6a7a63ea5cca563a4f1a45ba3f2a39ba344a2dba272a200a1a0a140a0d7a065a0059f9c9f339ec19e619df89daa9d539cea9c8a9c2a9bb89b469ad49a7d9a1499b4994b98eb98799807979e972396ba965195f1959a953194c89471942393c3936392f1927f920491ad914d90db9072901b8fcd8f6d8f1f8eda8e7a8e118d968d248cd68c7f8c1f8bb68b4d8aed8a8d8a2489bb896488fb88ad885687ff8796872d86cd86648604859b852984c98472841283bb835b82fb8292822981d28169810980a080497ff27fa47f447ee47e8d7e1b7db27d407ce07c777c057b9c7b2a7ac17a6a7a0a79a1794178ea788a782177b8774f770176aa765375f37593753c74dc747c741c73ce736572ea728a722a71d3716170f8708f702f6fe16f816f066e946e3d6ddd6d746d0b6c996c306bbe6b436ada6a5f69ed6984691b68b2685b67e9678067176693663c65ee6597653764ce646e63fc6393632162c1627c621c61ce616560fc609c60455fdc5f8e5f405ece5e6e5e175dc05d695d095ca95c495bf25b775b175ab75a4e59dc5997594058e05877582957c95769570956b2565255f255a4554454ed5484541b53b2534952e95289522051b7514550e5507c501c4fb34f4a4ef34e8a4e214dc14d6a4d0a4caa4c534bfc4b9c4b454ae54a8e4a2549bc494a48e14878481847af474f46d4466b45f94590451e44ac444343da438c433542e74299425441e24170411040a740473fd53f633efa3e9a3e433dec3d8c3d353cde3c873c423beb3b943b3d3acb3a623a0b39bd395d38f4388b382b37b0374736e73675360c359a352834b6344d33db336932ee3285321331aa314a30f3309c30332fd32f7c2f1c2ebc2e532de12d8a2d212cc12c6a2c012b6b2b022aa22a542a0629af296128f8288f284127f3278a27212694263425c225) else (0x41a0b85022494320f8481e0145c0a04822484320f8481e0141a0a04c25492421907c240f00b0a04c24492421907c240f00a2e04491064240f8501e012150512710070301784c1e0144843a198b84c1f0b03c02429492421d0cc5c1f0b03c028224843a198b83e160780484490866281307c2c0f0090b15427492421b0983e16078059542813a49210d83e1607805170aa112421b07c2c0f009089200e860260f8581e012150512710070301787c2e0f00b0512510070301787c2e0f00a0aa2a920843a190bc3e17078058542813095241086c1f0b03c02c344883c1a8b84c1f0b03c0283414649220f06a2e0f8581e0169a08b249186c1f0b03c02422c92401f0c04c1f0b03c0289107835170983e160780485091078351707c2c0f0092e0449186c1f0b03c020224803e180983e16078048711509a421d0c85e1f0b83c02c28120451e0d45c1f0b03c0283e5c089230c836160780487c3c18089200f860220d8581e018150512710070301585c1e0145c0893c9186c1f0b02c024220d2401f0c04c1f0b02c0282a0e0512710070301787c2e0b00c0e85828132962c9187c220f04c1e01a1d0a04ca38bc411c8883c130780604490878321207c280f0092562610472311589c3e170780592b1388239188ac4e1f0b83c02c95898411c8c45e1f0b83c0289589c411c8c45e1f0b83c0282c154a12c928883c1787c2e0f00c0a42490876331709c3e1707805c2490c74331707c2c0f0094542490c762e0f05c1e0130b4562490c762e0f05c1e01414c5e2490876331709c3e1707806053124863a198b83e1607805050a789433148983e16078051210ec5c260f05c1e0104843a198b84c1f0b03c024278bc411d8a44c1e0b83c028281385c249087c270f85c1e0161429c249086c1f0b03c02630562a94e1248c1e0b83c028ac5529c2f1248c1e0b83c0282c550a04f17892421f09c3e1707806870aa1429e249086c1f0b03c02c2853c491d0c44c1f0b03c0283a162a84f168a2421f0983c1707806858aa112421b0983e1607805074278bc411c8983c1707805228930843a190bc3e170780506614c92441e0d05c270f85c1e018192441e0b83e160780422c910782e0f05c1e0108b853249187c2e0f05c1e0141465b249107c361709c3e170780606828c92461e0d85c1f0b03c02d16c92461f0983c170780485822c92461f0d84c1f0b03c02d16c9c411c8983c1707804866144883c1a0b84e1f0b83c02c910782e0f8581e00e4883c170782e0f0070b4289187c2e0f05c1e0121c0b054a98a2461f0d85e1f0b83c0343a5c0a1220f86c2e1387c2e0f00c0a1230f06c2e0f8581e0121609a2c9187c260f05c1e01416089230f86c260f8581e0141345e208e44c1e0b83c02430142421d09c3e1707804c589388c3e1186c2e0f0092d0622d14259271187c2)))) else (if j<8 then (if j<6 then (0x15a4a220f45c270b83c03038160ad2511478351707c2c0f00c1506c349483c1b07c2c0f00a0e068321645a260f84e1707805870361944d1e0d83e16078050ac551a0b05291078360f8581e0181c0c85614494441e0d05e170780606023892411f0c44c1f0b03c02c2c1525c2b0f85a1d0b83c0282811a461b0983e160780485025478351707c2c0f0090a0460f06a2e1307c2c0f00a1186c2b07c2d1385c1e01214096230d44c1f0b03c0242c15c3c1b0b43e15078049220f05c1f0b03c01c2848c3c1b0b83e160780486c330b8561e8742e0f0090ba4a8f06a2e0f8581e012240d0642c95c4c1f0b44e17078060682e14496270d44c1f0b03c02c36194ae1e0d43e1507804925910782e0f8581e0101b24b230f06c2e0f8581e0141d0e266164ac4b1e8742e0f00b0d050258863a198b83e16078058682811433170983e16078050a9341408d210e8662e1307c2c0f00d1207036164ae248f44e17078058ad341223a1a8983e1607805074381a4ca5712c72350f8541e0181429c2490c74331707c2c0f00b0d050a7892431d0cc5c1f0b03c03034170a2471348c331307c2c0f00c0ba51238923c1a8ac4c1f0b03c03034160ae230e86c2b0f84c1e0161b0c0512389a431b08c3e1307806074381a4ba4a8e46a2b0f84c1e0181d0c25123898391a8b8461f0983c03438144962710c6a230f84c1e0162b4d05429074361688c3e1307806168ae1424c218d8461f0983c02c2849c441d8d0461f0983c028b4570a1258cc3e130780492611076341187c260f0092a14a1248c3a1b0ac3e1307805868a8522461d0cc3e130780505024112441a07c280f0090a04891070351507c240f00a0d05025492421907c240f00a2e0682812a49210c83e1207805868aa14091220e06a2a0f8481e0185c09044910681f0a03c02434190b9250e0642c0f8501e01613249230f86c260f8581e01414099249186c1f0b03c0243815851260f0682f0f85c1e0162411084401e0e858264b4441e08432170780812b1308239188ac4e1f0b83c02c95898411c8c45e1f0b83c028b8112461b07c2c0f0082e0449186c1f0b03c020b814099230d83e16078048582648c360f8581e01015051200e0602e1387c2e0f00b0e05614096441e0d05e15078058502249c360f8581e01014089270d83e160780405614096441e0d05e1f0b83c02c2c1525927110782f0f85c1e0161b0d064284bc51241187c361787c2e0f00f4502490874321787c2e0f00a0cc29924883c1a0b84e1f0b83c030330a2441e0d05c270f85c1e016154502690874321585c1e0141c0aa391409a421d0c85e1f0b82c0343a1b0c05023494320f8481e016160a04c23484320f8481e01459a4c1c0d4541f0903c0242611a421e0c8481f0a03c028281308b200f060240f8501e01614091220e06a2a0f8481e01) else (if j<7 then (0x3c0f00ac49208e44c1f0b03c0203a578aa48938883c1586c1e0161d0e12d15498461f0ac361700b0d0582b1264c220d83c0f00a0e8703508433170781e0121d0e06a9308c3a1b0ac360f00b4a24892888360f03c0203494492220d83c0f0080e0582a4b853241187c2d0e85c03028120451e0d45c1f0b03c0283a1c24a220d45c1e07804870341424a2307c2c0f0090e068281224a230781e0121c0dc289288c3e168742e0141c0d0582a4b248230f85e0141c0d05024490461b0781e0141c0ac28928883c1a0bc024502410870970aa4a230f85a1d0b8068703415a4a220d45c1e07805070b215a4a220d45c1e078050682813095241086c1f0b03c02c34150a04a9208c3a1b0ac360f00c0e4250cc5c1e07803a682812449230d83c0f00908a249047c311307c2c0f00a0e0511248a3c1a8b83e160780587028892461b0781e0101c0d05c28892461b0781e014180b8511247c31130781e0141c0d05c28092461b0781e0142b0e0651306a2e0f03c02438194b9551306a2e0f03c02830892411f0c44c1f0b03c028381704c1a8b83c0f0080f97831892411f0c44c0f00a26e249047c311307c2c0925c0c856934843a1707c2c0f00b2e9703549a461d0d83e1607805958aa89a451e0d45c1f0b03c02c34562ad228f06a2e0f8581e0162411c64968ac3b0d85c1e0142b0d5230f06c2e0f8581e0142a0d4520f06a2e1307c2c0f00b0e85223496461b0983e16078058aa34146441e0d45c260f8581e0181a8bc498e8662e0f8581e0141a8a4450e8662e1307c2c0f00b1206c2d1543e1589c2e0f00a0e8522549c46198983e16078058ae341443c1b0ac4c1f0b03c02c35198ae1d0cc3e1307804a512449c451e0d45c1f0b03c02d289124c1e0d45c260f8581e0169a4b8509186a260f8581e01414a411f0c44c1f0b03c0243494496228f06c1f0b03c028349448c1e0d84c1f0b03c02934970a6270d83e1607804e249047c311307c2c0f0090ba5191478351707c2c0f00a0c95191878350f8541e0129424b230f06c2e0f8581e0141a4a3230f06c1f0b03c02434180b8509348c360f8581e0161d0e05c93478351707c2c0f00b0e8602e9424c1e0d45c1f0b03c030381a0b8509386a260f8581e0161c0a04891478351707c2c0f00b0e0502448c351307c2c0f00a15a682a1283a1a8983e16078058703619851270f43a17078050702c1585c2b1248c3e168742e0f00d0d05428122461d0d83e16078058703414898489308c360f8581e018180a0469047c311307c2c0f00b0c050a611c4c1a8a44c1f0b03c0303014898449307c341307c2c0f00c14098482325c2b0f43a17078058642a8aa4a1d0c85c270b83c02c321543a1707c2c0f0080c856168742e0f05c1e012240e86c2c87e17078040ac35874360f8581e0101d0a61b07c2c0f0071187036) else (0xe0161c0ca28930843a190bc02438198512511078341785c1e0161a0b850a6896461b0781e0141c0d05c289304b228d43a0f00b0d05c2812849210681e012170a4248e862220d03c024341409126108340f0080a04493074341107c240f00a08e2490474311107c240f00a2e0529348c360f8581e0131a2a851234883c1a8b83e16078060a8351464c1e0d45c1f0b03c02c34558a32691078351707c2c0f00c0e85223496461b07c2c0f00a1546828c883c1a8b83e160780586c301488d2591868260f8581e0181a8a44692874331707c2c0f00b2e06a2949a421d0cc5c1f0b03c0303a188a5250cc58260f8581e016242e06c2d4843e1509c024b814a4d230c84c1f0b03c02a34550a2460d454260f8581e01694489260f06a2e0f8581e0141a4a2460f06c1f0b03c025341408b269186c1f0b03c028281164d200f860260f8581e0169a0a04e22c92461b07c2c0f00b4d05222c92461a0983e1607805a6828c9c360f8581e0109a0a3270d04c1f0b03c0253411649230d83e1607804845924803e180983e160780525092c883c1a8b83e160780506928c883c1b07c2c0f0090d0602849a461b07c2c0f00a0c25093078351707c2c0f00a0d060281124e1b07c2c0f00a0e9702986c1f0b03c020541b0d16529078360f8581e0162a8d058aa1448d220f06c1f0b03c0343a1408b269186c1f0b03c028281164c1e0d45c1f0b03c028284883c1a8b83e1607804860281164d200f860260f8581e01814098459306a281307c2c0f00b2e0502711649230d83e16078058682813249230d83e160780508cb81b2441f0b04e0105c0a44491868260f8581e0145c2c858aac983c1a8b84c1f0b03c034b8592ac5193078351707c2c0f00c2e0459248c360f8581e01211649200f860260f8581e0145c4a12591078351707c2c0f00b2e068291124b230d83e160780597034148892591868260f8581e0181a0a04692874331707c2c0f00b152682811a421d0cc5c1f0b03c030b89a2a852224843a198b83e160780686829492421d0cc5c1f0b03c02cb89a2a8522248433160983e16078069713455089210e8662e0f8581e0181a0c0509348c321307c2c0f00b0e8612849835150983e16078058683014089270c84c1f0b03c02c9589c411c8c45e17078048602813089240f860260f8581e0181d2e0602813c321307c2c0f00b0d964309403c190983e1607805c682c550a04d234803c190983e160780714891074361608c360f0090d055930682e0f03c0231248433148983e160780486c2a4803a190b44c1e0780545caa1429e249086c1f0b03c02c2853c491d0c44c1f0b03c02834190b05617092421d0bc2e0f00c8b9542853849210d83e16078058682a14a49210e8642e0f8581e0181a0c8582a4b24c210e85e014190ad250b83c0f0072e0683215a4a190b8))) else (if j<9 then (0x3c1a8b83c0f00c2e155224883c1a8b83c0f00a8e05497498421d0ac361700a0d05429492421d0c85c1e07805874b81509a2a924843a190b84e0185c0a84a924843a170781e014240e9703615a49210e85c2700b2e0682b492421d0c85c1e07805892381525a2a930843a1586c2e0181d0aa4a9288239170781e0141a0a8512488239168983c0f00b2e05c9286c2a0d03c0203414489269186c1e0780486828134892691864260f03c02c34180a2449348c360f03c0283a5c0a2449348c360f03c02834180a04d2249a46190983c0f00c12074b81b0c058934843e1509c0303a5c0c0512249a46190983c0f00c4b9551247031170781e0121c0d050269224a230d83c0f00b0e06d2b0a24a230b43a1700a120712a4b851251185a1d0b805870b014491251186c1e0780507034194b8511248835170781e0181c0d058aa1345a249107a2e138060703655092249106a2e0f03c02c481d0e06d30162aa249107a2e1380687034972aa249106a2e0f03c02c48234a92c154943a148642e0162411970168a24e150682e0141f0c045930883c1385c02434590a0459307835170781e0161a0a0459307835160983c0f00b150459107835170781e0129223c1a8a44c1e078040a822c803c1a8a84c1e0780506cb21408b260d45c1e078050683014898459306a2c130781e0182a0d868281164c1e0d45c1e0780606830970a0459307835160983c0f00d8532511078341785c1e012980a0459306a2a130781e0142a0d05022c903c1a8a84c1e07806060281308b260d850250e83c02c54116441e0d45c1e078048559348038170781e0101b8ab269107034170781e014972ad208e45c1e0780425c8e45a260f03c01c32160ac4d16898470b83c02856150a44f13082330f84c1e0162a0d1542891a401c0c45c260f03c03435150a0499308a3c1a8b83c0f00c0cd24908742e0f03c0203414a49210d85c1e0780495428892451e0d45c1e07805068aa14c49228f06a2e0f03c02c3a55489220f06a2e130781e01615853260f0682e1385c1e0141c0d04a1147835170781e0141c0b0559208a3c1a8b83c0f00b0e25c24c98451e0d45c1e078058682a12a49210d83c0f0090aa2a924843a190b84e1707805856924843a170781e0101585d24908742e0f05c0243815454249087432178048ac3415095249086c2e0f03c02c381a0b22d124883d1709c2e0161c0da249147835170781e0141a2c85024c94441a8b83c0f00b2b8582ac94441b0b43a0f00a0e25c2c15648220d45c1e0780587034990a0499208836168741e0181c0ca2a10874321785c1e014498441d8d0461f0983c02438148461d0d8561f0983c028310883b1a08c3e130780486830170a1269186c1e0780508c381b0cc289385a1d0b80509038194a92e1449c2d0e85c02cb8180b8512249a461b0781) else (if j<10 then (0x928662885c48d260f06c08d1a48c1f02246991810c371a6460446411e0c1874b81448882a0b1542891c18c2a0d868b2c9838c5c2c9559306c08c1d2e0519020a82c550a3220f831c541b2ca198a2970b255433170230a8361a08b260f06a2901b0a41830c25c2307835170239702c94a4c1858d059298110b8180a244934818341483861d0a41f022170aac92441a8b811c541b0d04592078360480e86c2c148360460a41820dc682c94c08b1a6441b0781e00c2b0ab240d4114b8190ac1b022970321542885c0c8550c85c08c5c0a9210c85c08c9a03e043c0821b0a21b022068ac1423881c2c8560d8114381524a1440e1642a86c08a1c2b8490c20712e12836045158682a12836046158682a12830a1c0a84a0d8114341483c184a3e0420e96c2886c08a1c0c95513061438192aa260d811838192aa1b0228602e1488e0450a41f0c1d1e0d810d3447c08781043855449220d811a2ac20829116407174331438ba198a1a1d881051881472331560891a48e0434bd208e86112f144306190aa143158690c187032890c349708502611b084158699218a8361a64881d0a3203158a82c146460c6158690cc510541b0d2198a2874361643b1050e8518818ac54160a21d89831c561a60869aa441c3158699306a28a2a0d3260f06a28c2b0d3260d41152f088351448b0520c1a6a28151e0c105191440e34940a361a088cc5a0869d0d41c34d44822d44a8218ac35492421850a4459144122f494331448bd250e86628b172331682205290c40cb887c3071a2a91e0c247233496089198ad158220702e490c301724c1c40e04890186022440c345908361a2cc1c40e850a6186023892260452e41f0c1c520f810cbb8608b71408b288c0871a2b41830e268aa86103a1b0c05023494320f8481e016170a24c234943a190883e1700b0d05024c98340f8501e0121a0a44822c9a441a07c280f00b0d052241164d220c8481f0a03c0302e14093260d03e14078048ac34140921c0cc581f0a03c02c3a148904593488340f8501e0161a0a04c25492421907c240f00b2e0502612a49210c83e120780597034550a04891070351507c240f00d0ea60291208b2691064240f8501e01a5c4a24a92c88381a8a83e12078060a834144904591070351507c240f00d0d5652892a4b220e06a2a0f8481e01a1a0a24822c88381a8b0441f0903c03434978ab260e0682a0d03c028b85564d200e45c1e078048a834550a246900722e0f03c02c34162a8512348039150983c0f00c1206d30168ab26900782a13805874b8140924692484320f8481e0181d0d058aa14092449107035170883e1207808068aa14649220f06a2e0f03c02f124823e188983e1607804955224883c1a8b83c0f0090d16428c92441e0d45c1e07805970aac92441e0d45c260f03c02cb81a2a85192488) else (0x26a0e860d0c086929070c3a1488b2302286e)))))
+def genIndex8 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x30e882bd6e51214ee09771729bfc0063f92d2842c0b073f4db3865413383597003d9be0013331e801327c04319af929c33f000abd193afcf002b33c01e00f007802a2451653ff802601e0088c32d18d2539569f80220ac85c8fa1c7c00834706cbe9095e00f001943c01e00d457aa75e440b087129ec55859c44132fc00a62f007800808eb075a99d91ff680f00197a8b9d06f002175c11e00f0044575cb89023422f3c0140cf007802e27e00f0018f51b451e497493fc006ab374015685fa44f007803c01440f007800213e00c1da1b7e05e00908833fc01096f03e09f8f2a218262a46173e00f0078000bfe00793e8c3c01e00e7d841fc01e00f006097c01e00f006c735cde00d5ef803c014b1f004be5d81e82b715aefc00b32694b9fa02be00f00780341de00075d049a292e766348ea8c240af80fa741a290d461f26217533319578009aba3c3131c5f09d8b8f007803d8fe00688f803c01e00a3c78024a5e00a4ff803c01e00901f803c002a28657803c01e00b45f4be9fb4dff007803c01c65f3278028fb4d0a85c4b7c01e00a3830e3c01e00e4ccbd7c01e0040ef8039d4cb35847803c01e00f006b58a59e00f000ca1512420f0011c980386ac8810a6d6ef23f0078012564c5f00780246fc0ff007803c01e00f007802e43e00b98000bc01e4298ef8015266a5f002053c01692f0071bbc01e00f006c0d82d0f1e16f8031d36be33da49540ca83d706bc1502475f0012984a9824f002c3ec4710cb1af803c0051bf003292a6d8de1905863984134f000cd691e0f8f0072dbc01456498bbb2059819f003c1291d84d923f803ccfe0068d0b6499ca393911b539dfe00021f9819b7eed91f4163839b243237803c01e00f7a496d632c87a2ba233c01e00f0078019fcc4b77bf803c01337f007802983e00a0f93db97eb26f007803c01e00f0000cb49249cd718313c01e0026bcaa882f6d85857800d59e00f007803c00045f003b75c6c69ef00606bc01c63657780315ace46147803c018c8d51a9b3c01e0094af803063e00f28f803437641e50b236ddde00f0032a3c00a845299078135e00f007802de7422909eb49520528a02014300070014000000088900308b2c31800c200344704590404300000718018014418604511a0000010060450410c10450c7008044080)
+def genData9 (j : Nat) : Nat := if 8 ≤ j then 0 else (if j<4 then (if j<2 then (if j<1 then (0x2443fa3a221fd1cd10fe887887f443443fa0a221fd04d10fde4a997ee248cbf712265fb49532fda4a90fed24c83f692241fb48f21fda47907ed23487f691a41fb09132fbe6a997df354c7ef9a265f7cd130fbe64987dd35ccbee9ae63f74d532fba6a98fdd34ccbee9a661f74d132fba68987dd32cc3ee99261efd1543f7e8aa17bf45507dfa1c85efd0d41f7e86a07bf42503dea2a87ef51542f7a8aa0fbd43d07dea1e81ef50e42f7a86a0fbd43503dea1885ef50b40f7a84a077d5454bbea9aa37fdd543bfeeaa15ff75506ffbaa657fdd531bfee8a9dff74546ffba2657fdd131bfee8985ff74442ffb9aa37fdcd42bfee6a0dff73502ffb9a217fdc953bfee4a8dff7250effb92837fdc940bfee498dff724c2ffb92217fdc553bfee2a1dff7150affb8a817fdc532bfee2985ff7050effb82857fdc141bfee0995ff704c6ff3a6657f9d331bfce9985fe74c86ff3a6417f9d310bfce9195fe748c6ff3a4437f9d132bfce898dfe744c2ff3a2437f9d120bfce8885fe740caff3a0637f9d021bfce7a15fe73d06ff39e817f9cf21bfce7905fe73c42ff39ca97f9ce52bfce728dfe7390aff39c837f9ce21bfce6aa5fe7354aff39aa37f9cd42bfce6a0dfe73502ff39a437f9cd20bfce6885fe7310aff398837f9cc21bfce5a1dfe7290eff392877f9c843bfce3a1dfe71d02ff38e617f9c654bfce329dfe7190eff38aa97f9c553bfce2a1dfe71502ff38a617f9c443bfaeb995fd75cc6febac877f5d641bfaeb18dfd75886febaa877f5d542bfaeaa0dfd754cafebaa637f5d521bfaea18dfd74ccafeba6637f5d330bfae990dfd74c82feba6217f5d253bfae9295fd74946feba4877f5d242bfae920dfd748cafeba4637f5d221bfae8995fd744c6feba2617f5d121bfae8905fd74442feba0657f5d031bfae810dfd73d0afeb9e837f5cf40bfae790dfd73c82feb9e217f5ce54bfae7295fd73946feb9c857f5ce41bfae7195fd738c6feb9c437f5cd21bfae6905fd73442feb98857f5cc41bfae610dfd72d0efeb96837f5cb40bfae598dfd72cc2feb94a97f5ca53bfae521dfd72442feb90877f5c743bfae3a15fd71d02feb8e657f5c730bfae32a5fd7194efeb8c877f5c443bfae1a1dfd70d0afeb86837f5c332bfae198dfd7090efeb84837f5c231bfae110dfd7010efeb80837f5c031bf8e8995fc744c6fe3a2617f1d110bf8e6a8dfc7350afe39a837f1cd40bf8e6885fc7250efe38aa77f1c543bf8e2a05fc714c3f9b8221fc40d10fce4310fd7318c7e799465edd0641f5e852179f4390efd380857e9c031bf2e0215f9700c6fb38c657d9c442beae3195f57110af7394877b9c831bdae521ded720c6ef39e43779cc42bbae790ddd7310adf3a6656f9d031b7ae9995bd740c6bf3a8855f9d431afaea2157d750c67ebb0853f5d831) else (0x1c5e9c3d1c219c081bf09bd71bc39bb21b9a9b851b6f9b5c1b489b311b159afa1ade9ac91ab39a981a849a671a4d9a361a1e9a0919e799d019ba999f1983996419469921190598da18c098a9188d98761860984b1833981217fa97e317c597a617869767174d9736171296f916df96ca16b2969916779662164896311619960215e895cf15af9592157c95651545952014fe94e914d194b6149c9475145794441426940f13f793d813b29393137b936013489331131b930212e892d112b19296127e92651253923e1226920f11f191d011b09199117d916a1150913b1127911010f290d910c590ac109a9085106b90581044902d10138ff80fde8fc70faf8f8c0f6e8f570f3b8f260f0e8ef90ee38ecc0eb48e9d0e838e6e0e568e430e2d8e1a0e068ded0dd98dc40da88d910d7b8d660d4a8d2f0d138cfc0ce28cc70ca78c8a0c6a8c4d0c2b8c0e0bf68bd10baf8b960b7c8b690b518b380b228b0b0aed8ad60abc8aa50a898a6a0a428a1d0a0189de09c689a90993897c096289430923890c08f288df08c788b0089c8887086f8854083a8821080387e407c887ad07978780076687450729871206f686dd06c586ae068a867106518630061485fb05dd85c405ac85950577855e054885310519850204ea84d304bb84a4048c8475045d8448042a841103fb83e403cc83a9038b8374035c8343032d831202fa82e502cd82bc02a48291027d82680254823b022b821a020881f301d981c401ae819b01798162014481310117810200ea80d700b580a200848071006180520040802b001580003ffa1a21ffd0930ffe84887ff414c3ff99281ffcc540ffe62907fe744cbff3a261ff9d110ffce6a17fe73503ff39287ff9c540ffca8997fe5350bff21a85ff90d40ffc86907fe41503ff1a265ff8d130ffc62a07fe244cbff10a81ff85110ffae8997fd744c3feba221ff5cd42ffae6a07fd7250ffeb9261ff5c910ffae2a07fd7050ffeb8283ff5c132ffaa8997fd5350bfea1e43ff50f20ffa87297fd4390bfea1aa5ff50d42ffa86a07fd43487fea1a41ff50d10ffa8598ffd42cc3fea1263ff50930ffa84887fd41503fea0a61ff50520ffa69197fd344cbfe9a261ff4cb41ffa65a07fd32507fe99281ff4c930ffa64887fd31503fe98a41ff49332ffa48997fd21503fe90a61ff45110ff862a07f904483fc81a21fddd110feee6887f772443fba1e21fdd0d10fee85887f742443fb99621fdcc910fee2a98ff714443fb89a21fdc4910fece9887f674443fb39e21fd9cd10fec87887f643443fb0a621fd85110fec27887f613887fb09a43fd84d10feae9887f574443fab9e21fd5cd10feae4887f543c43faa1a21fd50b10fea84887f532c43fa99221fd45631fea2b10ff5154c7fa8aa43fd45310fea2910ff514487fa8a221fd44f10fea26887f51)) else (if j<3 then (0xc241e1a15130f0b0700d1d1b18140947864483c281c03088746c504c201e1a15130f0b0700e1d1c16130847864483c281c03074706c60251d120e0b0700b1d16138b0847448382c1c02c887458504e2e24211d130f0b0700e1614130b09084744c3c2c1c030685c502621190f090700a1d1c170987068543c241c02c685c50261d1a110f090700b1a14120887068543c241c02c705048221d1a110f090700b1a14131289084643c241c02c504c46241d18110f090700b1814118807460443c241c02c60504c441a14110f090700b1a14131209084643c241c02c504c44241d18110f090700b18110807460443c241c0286858552e2926221e1a170f0b0700e1614134b49888784c3c2c1c03068504926221a0f0a0700a1a14114987868483c281c02c74584e2d221e120e0b0700b231a191615548b8a8948878685c3c2c1c044886058504e2e25221e130f0b0700e1a17145389488683c281c02c745845221e1a120f0a0700b19154a8988474645c3c2c1c030744e2e211d120e0b0700a221814138b89884744c3c2c1c0345c514e251e19120f0a0700b1d128847864483c281c0287460504c441c18100f0b00b1412480603c201c02074604c281814130f0b0700b2518080704c3c2c1c02428201c18170f0b0700914130b090704c3c2c1c02828241c18170f0b070091a161514130b0908c3c2c1c030241c150f09070070807460443c241c02028241c18170907008251f1811080704c241c02874642a201c1815130f0b0700c0a0907060544c3c2c1c028642a201c18170f0b0700a0a09070605c3c2c1c024886c6864522d2a24211d19170f0b0701025180807464504c3c2c1c02c8c88745854504e2e24230f0b0700e2518080704c3c2c1c024746429201c1816130f0b0700c0a0948070605c3c2c1c0286454281c1816130f0b0700b0a09070605c3c2c1c024886c6864512e2924221e1a170f0b070104b49080704c3c2c1c024a08874705228221e1a170f0b0700e2518080704c3c2c1c024241c150d0b070070807044342c1c01c28241c18150b07008251f1e1808070442c1c0283828241c18170f0b0500a25180d080704c3c2c1402a7cda7b42796a77f2765a74e2736a71f2709a6f226d8a6c126a5a68c2670a655263ba624260ca5f525dda5c625aca597257ba564254aa533251ba50024e6a4cd24b1a498247ea4652449a42e2412a3f323d5a3be23a4a38d236fa356233ca3212309a2f022d8a2bf22a3a28a226aa2512237a21c2202a1eb21d3a1ba21a0a1832169a14e212ea11520f9a0e420cca0b32099a0802068a0532037a02420129ffd1fdf9fca1fb29f9f1f879f721f5e9f471f319f1a1f049eef1ed99ec41eaa9e951e7f9e6a1e549e391e219e0c1df49de11dc99db81da09d811d699d501d3a9d1f1d079cf01cd29cb31c979c7e) else (0x947448382c1c024762c211d120e0b070092218148b89084744c3c2c1c030742e251d120e0b070091d138b8847448382c1c0288860504e2e26211d130f0b0700d1814538947864483c281c02c744e211e19120f0a0700a140b09084744c3c2c1c028a08884752c28221e150d0b0700d282322211d4b0887844342c1c0348c8884584c2d2a24210d0b0700d221e130b8907044342c1c02c948878752e201c110d0b0700c25221e1d134b0785044342c1c034a4a0908c8474702d2a26210d0b0700f27262423190b0a8987854342c1c038a49c94907874602e261e110d0b0700f24232116154b0a8887854342c1c038a49088847874584d2e221e110d0b070102724201e164b0a0785844342c1c0389478612c201c110d0b0700b281d1c1b1a19144b8a4908878685c3c2c1c048a08c74706c60512d24221e130f0b070101d1c1a161349088683c281c030645429241c1816130f0b0700c191549070583c281c02474604d241e18120f0a0700b1d1c16130b8a49088382c1c03064542d241c160e0b0700a1d18130b4907048382c1c02c7470685854504c2c24230f0b0700e19150a09070605c3c2c1c02c7460504c2c241c130f0b0700c190a4988070605c3c2c1c02c947460512d26201c130f0b0700d251d1814134b4907868504c3c2c1c03c908c706c686458552e2926221e1a170f0b0701329241d1c1b181614134b49888784c3c2c1c0487470685c504926221a0f0a0700d27241b1a1918164b4907868584c3c2c1c04468645d261c1a160f0a0700b1d1a181714114987868483c281c0382924201c18170f0b0700a25184b49080704c3c2c1c02c74604c29241814130f0b0700c1d1c16150b8a0948878685c3c2c1c03c74706858504c2c25221e130f0b0700f1d1c1b1409488683c281c02c645429201c1816130f0b0700c191548070583c281c02474604d201e18120f0a0700b1d1c1b188a09488382c1c02c562d201c160e0b070091d138b4807048382c1c028542a25201c18170f0b0700b221d14138b89480704c3c2c1c03470645428201c18170f0b0700c221d181413080704c3c2c1c030887460504d201e1a14130f0b0700e241b161514134807868584c3c2c1c03cac68545049221c1a160f0a0700d1d141312114887868483c281c0342825201c18170f0b0700a14130b09480704c3c2c1c02c74604c29201814130f0b0700c1b1a1916150b4a0988474645c3c2c1c0406864582c241d1916130f0b0700d1c1b190947064583c281c02c8c706c54201d1916130f0b0700d1c1a16150847064583c281c030706c6428251d160e0b0700b16158b0a0847458382c1c02c8c685854504e2d2a24211d19170f0b070112a1a14110706458483c281c030685854502d2824211d19170f0b0700f1d1b1a181614130b09884744c3c2c1c0407460582))) else (if j<6 then (if j<5 then (0x221e150d0b0700b1d16134b8887844342c1c02c8c8884742e2926220e0b0700c22201e1d0b4987848382c1c0308c6858552e2926221e1a170f0b0700f221d1614134b49888784c3c2c1c03868504926221a0f0a0700a1a14114987868483c281c02c9488807874584e2d221e120e0b0700f26231b1a1916158b8a8948878685c3c2c1c04894746c6058504e2e25221e130f0b070101a171489488683c281c028745045221e1a120f0a0700b282221168b0a8847458382c1c0349488785a2c1d16120e0b0700c281d1c1b1a1916158b4a8988474645c3c2c1c04c9474605a2e241d1916130f0b0700e178947064583c281c02488746c504e201d1916130f0b0700e1a14128847064583c281c02c6850441c1916120f0a0700b282322211d16138b8847448382c1c03ca09074706c6058504e2e26211d130f0b0701226241a19168b8907868544c3c2c1c03c685c52251e19120f0a0700b231b15148807868544c3c2c1c03474504a211e19120f0a0700b1d1c1a1489884643c241c02c6c66261c1a150f090700a1d1b18148987468443c241c03068585452221c1a150f090700c1d16138887468443c241c02c6c6864512e2924221e1a170f0b0700f1b5a18144b49088784c3c2c1c0347468584d24221a0f0a0700b1d150a4907060584c3c2c1c03055241c160f0a070081d134907860483c281c028702926201c18170f0b0700b1c144b49880704c3c2c1c02c7468504d2d241e1a14130f0b0700e1c1b1a19164b8a4988878685c3c2c1c040706d686058512d26221e130f0b0700f1d1c1a1449888683c281c02c7468592d241e1a16130f0b0700d1b4987068583c281c02474686051261e1a120f0a0700c0a4908070605c3c2c1c0292d24201c130f0b070091d130a49060504c3c2c1c02c5855502e2825221e1a170f0b0700e1614130b09488784c3c2c1c030514c25221a0f0a070091d190a4807060584c3c2c1c03065201c160f0a070081d184807860483c281c0288c7461594e2825220e0b0700c288b4807058382c1c024762d201c120e0b070091c0a8948070605c3c2c1c02c8870522e25201c130f0b0700c221d18144807868504c3c2c1c0348c75594c2e2a25220e0b0700c28168b0a4887858382c1c02c74584e2d221e120e0b0700b231c1a1615548b8a8948878685c3c2c1c044887058504e2e25221e130f0b0700e1c1a145389488683c281c02c88746c51201e1a16130f0b0700d1a144887068583c281c02874584d221e1a120f0a0700b0a0948070605c3c2c1c028502c25201c130f0b0700a1d180a48060504c3c2c1c02c552826211d19170f0b0700b194a8908474645c3c2c1c02c64552a26211d19170f0b0700c4a0908474645c3c2c1c028504c2c26211d130f0b0700b140947864483c281c0247470211e19120f0a0700a1d1c0) else (0xb0700b5c141148860483c281c02874604d241e18120f0a0700b1a1411498683c281c02474604d201e18120f0a0700b1411488683c281c020a86850441c19160f0a0700b1d5c1a181613494887868483c281c03c7570685125221a0f0a0700b1a5916490706458483c281c0306965241c19160f0a0700a1d1a1655480706458483c281c034695451201c19160f0a0700b221e1d4b8807044342c1c02c948878744d2c281e14110d0b0700e2422201e1d16134b8807044342c1c03c9c908078592c1e14110d0b0700d1d1817134907860483c281c030947460504d2d241e1a14130f0b0700f27241b1a18164b4907868504c3c2c1c040746c686050452618120f0a0700d1d1813124807860483c281c03074504c452218120f0a0700b1a1614110706450483c281c030685045261a0f0a070095c11488683c281c020584d25221e1a120f0a0700b1a141349488683c281c0285045241e18120f0a0700a114807860483c281c024552e201c150d0b070091c0a4988070605c3c2c1c02c747058552d26201c170f0b0700d242316154b0a8807054342c1c0349c908c592c281c16110d0b0700d19171549070583c281c0286865241c18160f0a0700a1d15130a4807060584c3c2c1c0345449201c160f0a07009241d1b16151448070584c3c2c1c03868585451201c18160f0a0700c150a4988070605c3c2c1c02c58552c28221e150d0b0700b16134b0887844342c1c0288c685854512e2924221e1a170f0b070101a14131249088683c281c02c5048211c19160f0a0700a2822211d4b0a0887854342c1c0348c888478752c221e110d0b0700d2423222116154b0a0887854342c1c03c90888474584d2c221e110d0b0700e281d1c1b1a19144b8a4908878685c3c2c1c0487470685c584d24221a0f0a0700d2824231d1c1b1a1916154b8a4908878685c3c2c1c054747068504924221a0f0a0700c1c16150847064583c281c02c6858545048211c19160f0a0700d1d1c1b184a09884342c1c02c6c6428261e150d0b0700a1d1b180987844342c1c028562825221e1a170f0b0700b1d1b1a181614130b09488784c3c2c1c040685c504825221a0f0a0700b1d1c170947064583c281c02ca4a0908c74702d2826210d0b0700e272624231b190b0a0987854342c1c03ca49c9490746c602c261e110d0b0700f1d1c1a1614130b09488784c3c2c1c03c74706c504825221a0f0a0700c1c8a0948878685c3c2c1c02ca49074706c6058504c25221e130f0b070111d1c1a171409488683c281c03070562825221e1a170f0b0700c1b190947064583c281c02868645c251c19160f0a0700b2724230b0a4987850302c1c030908884807874584c2d221e100c0b070101d1c0b4a89884342c1c0288c6c642c2a261e150d0b0700c1d1b180b8987844342c1c02c58552c2a)) else (if j<7 then (0x1c02c685125221e1a160f0a0700b1714530947864483c281c02c6858552d24221e170b0700b1a14131249088683c281c02c625c5225211e19120f0a0700c150a4988070605c2c1c02868625c514e241915120f0a0700d1413114907860483c281c02c8c7064585526221e170b0700c1c17141249888683c281c02c605c5045261a120f0a0700b261c1b1a191589488785c2c1c03470685c504a25221a0f0a0700c281d1c191589884745c2c1c030ac6854504a211c19160f0a0700d2a1a14110706458483c281c03068605c50462619120f0a0700c1d1c17141289884643c241c030746c605c5046251a110f090700d2b1a1615128887068543c241c034908e552c2926221e150d0b0700d26242361990b0a894887854342c1c03c757064562925221e1a16130b0700e5c19154948878583c281c02ca170542d25221e160e0b0700c1c158a0948878685c2c1c02ca0908d702e2925221e160e0b0700e1c1b1a190b09488785c2c1c0307470685c5025221a0f0a0700c241d5c1b164948878584c2c1c035706925221e1a160f0a0700b1d5c14914948868483c281c0308c6d6526201d16130b0700b1a5916498847064583c281c030906d645a4d26201d16130b0700d1a5992498847064583c281c0306c69645a5245241c1916120f0a0700f1d1a18171409864483c281c03075605249262219120f0a0700c1b1a5814490786854483c281c0347470662924221e1a170b0700c231c161549088785c2c1c02c70504c4924221a0f0a0700b1a16558b8948074584c2c1c030706d5625211c19160f0a0700c241d1b9816558948074584c2c1c0386a5d5625211c19160f0a0700c1c1a1514120847064583c281c034746859545245201c1916120f0a0700f1d9714538948864483c281c0306e68514d201e1a15120f0a0700d190a4988070605c2c1c02864542926201c18170b0700b1a9714894706454483c281c03068524a211c1915120f0a0700c181413114907860483c281c030625e25211e19120f0a0700b1a174987068503c201c02874504c4845221c1a100f080700d1a1411498683c281c0245045221a0f0a070081a141107064583c281c028746860584d25221e1a120f0a0700e1a181449488683c281c0287459241c1916120f0a0700b5c4907064583c281c0247469201c1916120f0a0700b1a144807064583c281c0284d2e201c110d0b070091413114907860483c281c02c5045201e18120f0a0700a1a14131106450483c281c02c744d241e18120f0a0700a1a181411498683c281c0287461201e18120f0a0700a5c141311488683c281c02874584d25221e1a120f0a0700c1a141349488683c281c028744d241e18120f0a0700a1a141149860483c281c0287461201e18120f0a0700a221d18144807868504c3c2c1c0348c6d201e1a14130f) else (0x6860524525221a120f0a0700c1d1c92498847064583c281c03075705a5245241c1916120f0a0700e1a14924988864483c281c02c6a5c5225211c19160f0a0700c1c97148948864483c281c02c6e69201e1a15120f0a0700b1a16154b49888785c2c1c02c68504926221a0f0a0700a1a18141149868483c281c02c8c6864585625221e170b0700c1a17145389488683c281c02c747064552a26211d19170b0700d1a1714538947864483c281c0308c706e542926221e150d0b0700d2699160b0a894887854342c1c034686458542c25221e170b0700c1a17145309488683c28))))
+def genIndex9 (j : Nat) : Nat := if 2 ≤ j then 0 else (if j<1 then (0x3c00f003c00f4574c9f00243cb263c00f003c00f003c00f003d10a8b7c00e4dd543e8df49bf513c00b2bd470f003c768017c00f00191a913615e32e2a17f000ca370234a0f003514f003c00647342775a81cb721057cf003c0025a6191c1b71a4f003c00f002491f0019ecf003c00f37254f6717c00e2058d67573c0018e68c7d7cfc00f003c00f003928141c981504bc00d083c00e3339785489df457a2c5af00345004a4472c2b41f283d1605122fd80f000c1b7483c0010dfc0068638f2f0005d1f4da8661592d4bf003477126b96ff003963b74e94dc84cc30f6c1117d415490c03106468a460910535f983d5d04b7b7c00f00121a76845e163818cdf0030bbc2761a70737c00b517c0091abcc11258992d6a88ce7873426a464952f57d82fe145e1e38515c3f001418f003c0015e7d48f0b58baf3bda07c6d7039f003c00f002d3a64c69d7f003c00f00259ff003c00f003c002183c00f003c0017fbc00f003c00f003c00f00188df1ffc00f000c63f001c885797c00c8bbc00f003c00715ed7350424e3d0ef1b1f50bc006460a0d519fc00a189dbb278080e20d18d246361c731b904e587fc00129605ff0011e2f00396d9553c00f003c00c7dfc00d3f0c1af003c00f0021160577c00c7e3c00f00095a77afc00f0020f9f003cf7e05e811f003c00f00097df0019b746bfc00f003c00f003c00365560491ead89b14e0b7368bc00f00201f47a7dc2f003c00f000a3a155c625f003c00942f106f0035b9824bc00562b1a8f0028166123c00a3ebc00f003c00f003c00b1d7c00c363c00f00091f88aadf1f003c00f001908f0024bdd10fc004273631186f14ef000147d7c0401961e998b5ca8eb70c7c00f0024c8a3f4024a64c0b5f003c0042fbc00f00242c931199b4733c00625d05c3677c00423283f46f7139f003c00f303c00a7f0a27f0039fbf003c00f003c00060ce0cf00356bf003c00f000971f002126f003c00f0010a8f003c0056fd4a1f00199ef0034e4b354d768179e34944fc00a6831def003c0013414c294d7c00c0a7232f003c00f003e1536fbc00f003c00f0028cb43b30a9d5b1203125204758488b1f001c951770a02367259404bfa3091765f520eb10cd712469f002223c81ba00e29ed6eb39952ef0004807035ce2679e83230548ed40294b447bc4e9316ce16908bd018798550555a93023475b3f00358218da555242b94ca6380abf001d2484955a3f00258cf003c00b2275e42586065f00149f34084801a1c30920040010c0810e30149030000008060c2170cd43010a5919812089120448701001c1170e041000e00800041418006006890c042800200b82180c08256600850600406082000400e40862c2889700000810440003000800000149875e78407020030a0a10028060c685040000788c420d02000012658201) else (0xf00100054e3c00f00044ab51923ef0008b6f0030ee765fc009369dc6f001079f003c002166596835fc0051485bc90b84e551f5854f228de38597404e01e93b127a102f00312b429bc00407bc00715bc0057651684094626f0e10b9b43a1ea1024e2232c1474f002cf886da10ff0008737108836f6b7c00f003c00e8efc00f00388e48bd60a57bb8ca604c8df88b084b76cb90325060b316ea01c16671b8873dd74f003c00a387c00f003c00f002590376fc009437c00f003c00f003c00f003c00f00347101bd868d892cc695f805801f383d856c5c9a0874ac840151287f7c00e0a3c7b13651f65617482739e9cef8808c3062fc0004f4d77f00160b38f7083f001dfae127c0042ffc0084fc5a5f003c00061203338741a9f00059a90f8841e4d092331fbd7af000cbc711652da21bc8fc500233103fa0848afc00211bc40f0000eab74952aa445221f0028def001927f1879d028d71df08469abe5678198528188321fc00f24d1a6f000c85f003c00f003c00f3ffc00f003c00f7fc9caf003c004110d49f0014b2f5c29dd508fc00f00392c8841dac33a3c35e1b3521147b166159fe0e033c20102ab8aef0011d4d8f3c00800fc00c377c00f0010f0f00223887589c1d317962e3509d801af8fb05ef80bf002499f003ca4f0039d5f003c0080741b4f000dc8f0020f6b3c50d364cfd53e477c00f00213cf003c00f003c00f83fc00f003c00f00111b900817f363f02b4583c00f003c00f003628f003c009562d867864975c133c007703c00f003c00f003c00f003c00f003c00f0034dbf001c78913c055f0001aef003ca2a768109b0a900634cbc0013cf95184fa4fef003c00f00))
+def genData10 (j : Nat) : Nat := if 1 ≤ j then 0 else (0x1d3668c981624443850601874e0b14243860b0e1418061d38685890e121c28300b3a70d9812181c20300a5088e9c28284070c161c28300e508d11d3850407090e1418069d38589880c0e101805192a283860a121c28300b325438507080c020e98261c30407080c028e9c3660509060a0c028e96262c508060a0c028a8b0e14182830083a4c587080c141804a34474b15284c589110e1418071514243860b0e141805223a5098b121c2438506018645080e182c385060149511d3050407090e141806254474c14261c305090e14180729509d28b14241828300b52a1223448458a100c141806a7488c58a0e141828300b529d2a44480f0b0e101828300e52a0e9c162444385060169d31b346458a121c305870a0c03d4a74a74d981624384870a0c038d1712181c203008488cb1514203860b0e141806a94888e96284c407090e14180714242030384060109d21b2c1c305090e1418061a0e182838406010508870c101c2030093458a94262c488870a0c0305090e182c385060125098b121c2438506014284070c161c2830094a60407090e1418049d304c5060a121c28300b0e18203840600e181c203005d05cabc58c0cba4b43af7aa4a66a1a9ce9829448ff89784b7f17a574b6e369062f5dc5745214b244a40c3ab3433052ab26d2281ce18913d0f80b3060029000ffd0fff42ffd07ff40ffccbff31ffcc3ff21ffc83ff10ff953fe53ff94bfe51ff90ffe42ff907fe32ff8c7fe21ff553fd53ff54bfd51ff50ffd42ff507fd40ff4cbfd31ff4c3fd21ff483fd10ff10ffc42ff107fc32ff0c7fc21fdc43f510)
+def genIndex10 (j : Nat) : Nat := if 2 ≤ j then 0 else (if j<1 then (0x2cb9e3be0098deb73c01e0034bf803c01b48e027a3a2729548959dfd18fe00f007803c00614926d98445f65f3b13e3ab2918b4617800035e00f004d03c00103f0061e9f0e8c9f9c19d8a51955d655b313130114461cc6545c3cb2422ec9b02eacc11d2f1f0e68453f83203d56b704ac7da26ab83bee064191e00f00334a5b774c0c84a4bc01379f006146e872a0512892564c70ef137802d23e0071770a72e9e001b093c15bfe009c6b23fc0156cf004197c008a6f0064116a268459b1d73051333685f8039d2556f007802eafe00f007802187e00f006063c018fb079f801653e00f007802459e00f0002f4a2ceebd2671bad806381a87802997e00c67cdc81dbe0035fe8d686fe3e400a3479fbc66d27251be5a06f42ded6c8ac8678a3f80107792fe62b4d048de00f897803c0187df0079dfc01e00f007800a59a8257fb36bc00122f90db84dcfe00b2f2a05288c93f006399add82ddc2f5c1932cf4f003023c01e8db31cd939ef09b50eeda3c0150d0428e0fc01e0014b141e23160d73a3a23c01e00f0002a1ca8e00f0055f310fe006098d97c01e00d367c3fc01ebca51f803c0015ab0b780180fe00581234fc01e00c797803c01b09c298243c005113717800d1274d66878031fd36af00780281de008caf803c01e00f005167c01e009703a54917e00d8f7800aba87e793f80067bca1e38f8006b174ef003202528142f007802405e00a25c5ceabd27fca958809d0e64d52fe059dc40ff007abf4e7a7ba92e8af59be00f00402c5f22d5f007803c01e00f0054f8629e00f007803c00576f006647c01e00f000cf0e4069a58e7802ca5e00f0074c015de00001f8030486fa427f803c01e00f001b1bc01ee4f007802ebee6af007803c008cef007803e93e005a089f3ae3869508482bc000c45728ac1c6cc1ff0075d7aa66eff00264e953e0049d089fc01e00f007803c01ab9f007803d3ccb22a7f801edb879f000564a774d48c264cb983860f00780348b43005a32a947e872f007800e19e00236f8000e0022f00288e2cee1cf71822a47ad63bbf4903e95a43952780066fc3a010f80240be001c97803c01e0032b8907c0109842d7803c0158f283780317d4311954b58f0c6ecf432377c0118c256d18bc01f8045af803c01e00f0060d2a7fe58d6cc493c01647f007803c01e00e8bfab1ef7f6618425e3c0170acb7f803af4a1bf003400824c17f002ade4abe00f7b78030a05351033a0f62be00f000bc5aefe00f006c175f9a44f004e28485e00f0038e4233c5c0a2f8035afe00f0058a96d312393af803c01e0026f78009eb85da4fa8c9d6de002415945400008c908110c62598d0c90465c004214100c0d000604e00030500010000000804e00308201b4850081ce2c30821010442431d200028d1406830400050810000c2012001410580004) else (0x130143c62cfc00e9cf5d7803c01e001b068cfc01e00435844102b11a655f803495e00f0062c7c0189d9c4))
+def genData11 (j : Nat) : Nat := if 1 ≤ j then 0 else 0x18408027f
+def genIndex11 (j : Nat) : Nat := if 1 ≤ j then 0 else (0xe2f91f03c0f03c0c9ad2f01e0b269ea3fc0f6e5af03c0f0269593c0307c0f03c0d8482f0210973c0f03a2723c0f0186f0365b648ef7f5723058303c06a18df03c05759621e85f1283550a392bc0e5467f011381200270000)
+def generatedLevels : Nat → Packing
+  | 5 => (8,6,6,0,0,6,0,genData5)
+  | 6 => (77,5,6,0,0,11,0,genData6)
+  | 7 => (314,4,6,0,0,14,0,genData7)
+  | 8 => (575,3,6,0,0,16,0,genData8)
+  | 9 => (406,2,6,0,0,16,0,genData9)
+  | 10 => (42,1,6,0,0,12,0,genData10)
+  | 11 => (1,0,6,0,0,0,0,genData11)
+  | _ => emptyPacking
+def generatedIndex : Nat → Nat → Option (Nat × Nat)
+  | 6 => lookupWord 2 13 0 7 3 0 genIndex6
+  | 7 => lookupWord 20 119 4 11 7 0 genIndex7
+  | 8 => lookupWord 79 480 6 13 9 0 genIndex8
+  | 9 => lookupWord 144 862 7 14 10 0 genIndex9
+  | 10 => lookupWord 102 609 6 13 9 0 genIndex10
+  | 11 => lookupWord 11 66 4 10 6 0 genIndex11
+  | _ => fun _ => none
+def qF_ : Forest := ⟨507,11,fun i => generatedSamples[i]?.getD (0,0),generatedColumns,[[]],generatedLevels,generatedIndex⟩
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP5_0 : block qF_ 5 0 8 = true := by
+  apply cellsBlock (ar := 6) (rows := 0) (d := 1)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB5 : block qF_ 5 0 8 = true := genP5_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP6_0 : block qF_ 6 0 10 = true := by
+  apply cellsBlock (ar := 6) (rows := 0) (d := 1)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP6_10 : block qF_ 6 10 67 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB6 : block qF_ 6 0 77 = true := (@block_merge qF_ 6 0 10 67 genP6_0 genP6_10)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP7_0 : block qF_ 7 0 16 = true := by
+  apply cellsBlock (ar := 6) (rows := 0) (d := 2)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP7_16 : block qF_ 7 16 70 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP7_86 : block qF_ 7 86 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP7_182 : block qF_ 7 182 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP7_278 : block qF_ 7 278 36 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 3)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB7 : block qF_ 7 0 314 = true := (@block_merge qF_ 7 0 86 228 (@block_merge qF_ 7 0 16 70 genP7_0 genP7_16) (@block_merge qF_ 7 86 96 132 genP7_86 (@block_merge qF_ 7 182 96 36 genP7_182 genP7_278)))
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_0 : block qF_ 8 0 96 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_96 : block qF_ 8 96 29 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 2)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_125 : block qF_ 8 125 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_221 : block qF_ 8 221 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_317 : block qF_ 8 317 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_413 : block qF_ 8 413 36 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 3)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_449 : block qF_ 8 449 96 = true := by
+  apply cellsBlock (ar := 9) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP8_545 : block qF_ 8 545 30 = true := by
+  apply cellsBlock (ar := 9) (rows := 0) (d := 2)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB8 : block qF_ 8 0 575 = true := (@block_merge qF_ 8 0 317 258 (@block_merge qF_ 8 0 125 192 (@block_merge qF_ 8 0 96 29 genP8_0 genP8_96) (@block_merge qF_ 8 125 96 96 genP8_125 genP8_221)) (@block_merge qF_ 8 317 132 126 (@block_merge qF_ 8 317 96 36 genP8_317 genP8_413) (@block_merge qF_ 8 449 96 30 genP8_449 genP8_545)))
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP9_0 : block qF_ 9 0 34 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 3)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP9_34 : block qF_ 9 34 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP9_130 : block qF_ 9 130 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP9_226 : block qF_ 9 226 96 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP9_322 : block qF_ 9 322 9 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 1)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP9_331 : block qF_ 9 331 75 = true := by
+  apply cellsBlock (ar := 9) (rows := 0) (d := 4)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB9 : block qF_ 9 0 406 = true := (@block_merge qF_ 9 0 226 180 (@block_merge qF_ 9 0 34 192 genP9_0 (@block_merge qF_ 9 34 96 96 genP9_34 genP9_130)) (@block_merge qF_ 9 226 96 84 genP9_226 (@block_merge qF_ 9 322 9 75 genP9_322 genP9_331)))
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP10_0 : block qF_ 10 0 2 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 0)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP10_2 : block qF_ 10 2 40 = true := by
+  apply cellsBlock (ar := 8) (rows := 0) (d := 3)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB10 : block qF_ 10 0 42 = true := (@block_merge qF_ 10 0 2 40 genP10_0 genP10_2)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genP11_0 : block qF_ 11 0 1 = true := by
+  apply cellsBlock (ar := 7) (rows := 0) (d := 0)
+  simp only [cells, boxes]
+  repeat' apply And.intro
+  all_goals decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genB11 : block qF_ 11 0 1 = true := genP11_0
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genTables : checkedTables qF_ 11 := by
+  intro k hk
+  interval_cases k
+  · decide +kernel
+  · decide +kernel
+  · decide +kernel
+  · decide +kernel
+  · decide +kernel
+  · exact genB5
+  · exact genB6
+  · exact genB7
+  · exact genB8
+  · exact genB9
+  · exact genB10
+  · exact genB11
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem genGeometry : graphValid qF_ (boundsBefore generatedKnown) = true := by
+  decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem lowGenerated : Lower true (varsX 507) (qG_ 507) 12 :=
+  lower_forest (g := qF_) (i := 0) (hints := 67)
+    (before_sound generatedKnown generatedPrior) genGeometry genTables
+    (by decide +kernel) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+end PEqualNP.Outside.L_meta_51392.ForestCore
+namespace PEqualNP.Outside.L_meta_51392
+open PEqualNP.MetaComplexity PEqualNP.CircuitLowerBounds ForestCore
+def graph (x : Fin 8 → Bool) : Bool := decide (∃ i < ([0,3,0,4,1,4,0,5,2,5,3,5,0,6,1,6,2,6,3,6,4,6,0,7,1,7,2,7,3,7,4,7,5,7] : List ℕ).length / 2,(List.ofFn x).getD (([0,3,0,4,1,4,0,5,2,5,3,5,0,6,1,6,2,6,3,6,4,6,0,7,1,7,2,7,3,7,4,7,5,7] : List ℕ).getD (2 * i) 0) false = true ∧ (List.ofFn x).getD (([0,3,0,4,1,4,0,5,2,5,3,5,0,6,1,6,2,6,3,6,4,6,0,7,1,7,2,7,3,7,4,7,5,7] : List ℕ).getD (2 * i + 1) 0) false = true)
+def coding : Fin 8 → Nat := ![0,1,2,3,4,5,6,7]
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+def roots : List Sig := List.ofFn (fun i : Fin 8 => inputs.getD (coding i) zero)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+def codedGraph : Sig := 0xfffffffffffffffefffffffffffffffefffffffefffffffefffefffaeeeeaa00fffffffffffffffefffffffffffffffefffffffefffffffefffefffaeeeeaa00
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem wholeBound : Lower true roots codedGraph 13 := by
+  have h := lift_ok (u := true) (ms := fixRows 4 0) (raw := roots) (T := codedGraph)
+    (xs := [(inputs.getD 2 zero,32,36)]) (by decide +kernel) (qP_ _ (by decide +kernel))
+    (qP_ _ (by decide +kernel)) lowGenerated
+  have count : (([(inputs.getD 2 zero,32,36)] : List (Sig × Row × Row)).map Prod.fst).toFinset.card = 1 := by
+    decide +kernel
+  rw [count] at h
+  exact h
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+def sampleInput (r : Row) (i : Fin 8) : Bool := bit r (inputs.getD (coding i) zero)
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem sampledInput (r : Row) : List.ofFn (sampleInput r) = roots.map (bit r) := by
+  rw [roots, List.map_ofFn]
+  rfl
+set_option maxRecDepth 12000 in
+set_option maxHeartbeats 0 in
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem sampleCorrect : ∀ r : Row, bit r codedGraph = graph (sampleInput r) := by decide +kernel
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+def signedNot (g : Gate) : Bool := match g.op with
+  | .not => true
+  | _ => false
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem binaryLower (C : Circuit) (fit : FanInTwo C)
+    (comp : ∀ x : Fin 8 → Bool, C.eval (List.ofFn x) = graph x) :
+    13 ≤ C.gates.countP (fun g => !signedNot g) := by
+  have goalEq : (execute C.gates roots).getD C.output zero = codedGraph := by
+    apply bit_ext
+    intro r
+    rw [← b_read, execute_bits _ _ _ (fun g hg => (fit g hg).1), ← sampledInput]
+    exact (comp (sampleInput r)).trans (sampleCorrect r).symm
+  have out := get_rep (u := true) (execute C.gates roots) C.output
+  rw [goalEq] at out
+  unfold ForestCore.Repr at out
+  have pg : bit 0 codedGraph = false := by decide +kernel
+  rw [nrm_id pg] at out
+  have properGoal : proper codedGraph := by unfold proper; decide +kernel
+  obtain ⟨k, S, hk, run, sub⟩ := extract (u := true) C.gates roots fit (by simp) properGoal
+    (out.resolve_right (fun h => h properGoal))
+  change k ≤ C.gates.countP (fun g => !signedNot g) at hk
+  rw [nrm_map (by decide +kernel : roots.all plainWord = true)] at sub
+  have step := list_run run S.toList (Finset.nodup_toList _) (by simp)
+  have ready : supply true (roots.map observe) (S.toList.map observe) := by
+    intro v hv
+    obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hv
+    exact Or.inl (List.mem_map_of_mem (sub a (Finset.mem_toList.mp ha)))
+  obtain ⟨q, bank, reach, hit, paid⟩ := contraction (observe_proper properGoal) step _ Reach.start ready
+  have lower := wholeBound q bank reach hit
+  omega
+def upperGates : List Gate := [⟨.or, [1,0]⟩, ⟨.or, [3,2]⟩, ⟨.or, [5,3]⟩, ⟨.or, [7,0]⟩, ⟨.or, [7,6]⟩, ⟨.or, [12,4]⟩, ⟨.or, [12,5]⟩, ⟨.and, [8,13]⟩, ⟨.and, [9,14]⟩, ⟨.and, [10,11]⟩, ⟨.and, [4,12]⟩, ⟨.or, [15,16]⟩, ⟨.or, [19,17]⟩, ⟨.or, [20,18]⟩]
+theorem upper_shape : ∀ g ∈ upperGates,(g.op = .and ∨ g.op = .or) ∧ g.inputs.length ≤ 2 := by
+  intro g hg
+  simp only [upperGates, List.mem_cons, List.not_mem_nil, or_false] at hg
+  rcases hg with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> simp
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem upper_sem : ∀ x : Fin 8 → Bool,
+    Circuit.eval ⟨upperGates,21⟩ (List.ofFn x) = graph x := by
+  decide +kernel
+end PEqualNP.Outside.L_meta_51392
+open PEqualNP.Outside.L_meta_51392 PEqualNP.CircuitLowerBounds PEqualNP.MetaComplexity in
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 0 in
+theorem PEqualNP.Outside.L_meta_51392 : (∀ (gates : List PEqualNP.CircuitLowerBounds.Gate) (o : ℕ), (∀ g ∈ gates, (g.op = PEqualNP.CircuitLowerBounds.GateOp.and ∨ g.op = PEqualNP.CircuitLowerBounds.GateOp.or ∨ g.op = PEqualNP.CircuitLowerBounds.GateOp.not) ∧ g.inputs.length ≤ 2) → (∀ i j : Fin gates.length, (gates.get i).op = PEqualNP.CircuitLowerBounds.GateOp.not → (gates.get j).op = PEqualNP.CircuitLowerBounds.GateOp.not → i = j) → (∀ x : Fin 8 → Bool, PEqualNP.CircuitLowerBounds.Circuit.eval ⟨gates, o⟩ (List.ofFn x) = decide (∃ i < ([0, 3, 0, 4, 1, 4, 0, 5, 2, 5, 3, 5, 0, 6, 1, 6, 2, 6, 3, 6, 4, 6, 0, 7, 1, 7, 2, 7, 3, 7, 4, 7, 5, 7] : List ℕ).length / 2, (List.ofFn x).getD (([0, 3, 0, 4, 1, 4, 0, 5, 2, 5, 3, 5, 0, 6, 1, 6, 2, 6, 3, 6, 4, 6, 0, 7, 1, 7, 2, 7, 3, 7, 4, 7, 5, 7] : List ℕ).getD (2 * i) 0) false = true ∧ (List.ofFn x).getD (([0, 3, 0, 4, 1, 4, 0, 5, 2, 5, 3, 5, 0, 6, 1, 6, 2, 6, 3, 6, 4, 6, 0, 7, 1, 7, 2, 7, 3, 7, 4, 7, 5, 7] : List ℕ).getD (2 * i + 1) 0) false = true)) → ∃ (gates' : List PEqualNP.CircuitLowerBounds.Gate) (o' : ℕ), (∀ g ∈ gates', (g.op = PEqualNP.CircuitLowerBounds.GateOp.and ∨ g.op = PEqualNP.CircuitLowerBounds.GateOp.or) ∧ g.inputs.length ≤ 2) ∧ gates'.length ≤ gates.length ∧ ∀ x : Fin 8 → Bool, PEqualNP.CircuitLowerBounds.Circuit.eval ⟨gates', o'⟩ (List.ofFn x) = decide (∃ i < ([0, 3, 0, 4, 1, 4, 0, 5, 2, 5, 3, 5, 0, 6, 1, 6, 2, 6, 3, 6, 4, 6, 0, 7, 1, 7, 2, 7, 3, 7, 4, 7, 5, 7] : List ℕ).length / 2, (List.ofFn x).getD (([0, 3, 0, 4, 1, 4, 0, 5, 2, 5, 3, 5, 0, 6, 1, 6, 2, 6, 3, 6, 4, 6, 0, 7, 1, 7, 2, 7, 3, 7, 4, 7, 5, 7] : List ℕ).getD (2 * i) 0) false = true ∧ (List.ofFn x).getD (([0, 3, 0, 4, 1, 4, 0, 5, 2, 5, 3, 5, 0, 6, 1, 6, 2, 6, 3, 6, 4, 6, 0, 7, 1, 7, 2, 7, 3, 7, 4, 7, 5, 7] : List ℕ).getD (2 * i + 1) 0) false = true)) := by
+  intro gs o legal _ computes
+  by_cases neg : ∃ g ∈ gs, g.op = .not
+  · obtain ⟨g, hg, eq⟩ := neg
+    have fan : FanInTwo ⟨gs, o⟩ := fun t ht => ⟨(legal t ht).1,(legal t ht).2⟩
+    have low := binaryLower ⟨gs, o⟩ fan computes
+    change 13 ≤ gs.countP (fun g => !signedNot g) at low
+    have lt : gs.countP (fun g => !signedNot g) < gs.length := by
+      rw [List.countP_eq_length_filter]
+      apply List.length_filter_lt_length_iff_exists.mpr
+      exact ⟨g, hg, by simp [eq, signedNot]⟩
+    refine ⟨upperGates,21, upper_shape, ?_, upper_sem⟩
+    change 14 ≤ gs.length
+    omega
+  · refine ⟨gs, o, ?_, le_rfl, computes⟩
+    intro g hg
+    obtain ⟨op, cap⟩ := legal g hg
+    exact ⟨op.imp_right (fun h => h.resolve_right (fun eq => neg ⟨g, hg, eq⟩)), cap⟩
